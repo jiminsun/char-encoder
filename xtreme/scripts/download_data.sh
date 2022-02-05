@@ -216,15 +216,15 @@ function download_siqa {
     echo "Successfully downloaded data at $DIR/siqa" >> $DIR/download.log
 }
 
-#download_xnli
-#download_pawsx
-#download_tatoeba
-#download_bucc18
-#download_squad
-#download_xquad
-#download_mlqa
-#download_tydiqa
-#download_udpos
+download_xnli
+download_pawsx
+download_tatoeba
+download_bucc18
+download_squad
+download_xquad
+download_mlqa
+download_tydiqa
+download_udpos
 download_panx
-#download_xcopa
-#download_siqa
+download_xcopa
+download_siqa

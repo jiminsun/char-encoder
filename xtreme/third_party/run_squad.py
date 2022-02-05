@@ -341,7 +341,7 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
       if args.model_type == "xlm":
         inputs["langs"] = batch[6]
 
-      outputs = model(**inputs)
+      outputs = model(**inputs).to_tuple()
 
     for i, example_index in enumerate(example_indices):
       eval_feature = features[example_index.item()]

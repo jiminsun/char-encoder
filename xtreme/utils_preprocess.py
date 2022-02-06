@@ -15,7 +15,7 @@
 from __future__ import absolute_import, division, print_function
 
 import argparse
-from transformers import BertTokenizer, XLMTokenizer, XLMRobertaTokenizer
+from transformers import BertTokenizer, XLMTokenizer, XLMRobertaTokenizer, CanineTokenizer
 import os
 from collections import defaultdict
 import csv
@@ -29,10 +29,8 @@ TOKENIZERS = {
   'bert': BertTokenizer,
   'xlm': XLMTokenizer,
   'xlmr': XLMRobertaTokenizer,
+  'canine': CanineTokenizer,
 }
-
-PANX_LANGUAGES = 'ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu qu pl uk az lt pa gu ro'.split(' ')
-UDPOS_LANGUAGES = 'af ar bg de el en es et eu fa fi fr he hi hu id it ja kk ko mr nl pt ru ta te th tl tr ur vi yo zh'.split(' ')
 
 def panx_tokenize_preprocess(args):
   def _preprocess_one_file(infile, outfile, idxfile, tokenizer, max_len):
@@ -119,11 +117,13 @@ def panx_preprocess(args):
           fout.write('\n')
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
-  for lg in PANX_LANGUAGES:
+  langs = 'ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu'.split(' ')
+  for lg in langs:
     for split in ['train', 'test', 'dev']:
       infile = os.path.join(args.data_dir, f'{lg}-{split}')
       outfile = os.path.join(args.output_dir, f'{split}-{lg}.tsv')
       _process_one_file(infile, outfile)
+
 
 def udpos_tokenize_preprocess(args):
   def _preprocess_one_file(infile, outfile, idxfile, tokenizer, max_len):
@@ -185,6 +185,7 @@ def udpos_tokenize_preprocess(args):
       else:
         _preprocess_one_file(infile, outfile, idxfile, tokenizer, args.max_len)
         print(f'finish preprocessing {outfile}')
+
 
 def udpos_preprocess(args):
   def _read_one_file(file):
@@ -263,9 +264,10 @@ def udpos_preprocess(args):
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
 
+  languages = 'af ar bg de el en es et eu fa fi fr he hi hu id it ja kk ko mr nl pt ru ta te th tl tr ur vi yo zh'.split(' ')
   for root, dirs, files in os.walk(args.data_dir):
     lg = root.strip().split('/')[-1]
-    if root == args.data_dir or lg not in UDPOS_LANGUAGES:
+    if root == args.data_dir or lg not in languages:
       continue
 
     data = {k: [] for k in ['train', 'dev', 'test']}
@@ -383,8 +385,7 @@ def tatoeba_preprocess(args):
     'nld':'nl', 'por':'pt', 'rus':'ru', 'swh':'sw',
     'tam':'ta', 'tel':'te', 'tha':'th', 'tgl':'tl',
     'tur':'tr', 'urd':'ur', 'vie':'vi', 'cmn':'zh',
-    'eng':'en', 'aze': 'az', 'lit': 'lt', 'pol': 'pl',
-    'ukr': 'uk', 'ron': 'ro'
+    'eng':'en',
   }
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -446,7 +447,7 @@ def tydiqa_preprocess(args):
 
   for lang, data in lang2data.items():
     out_file = os.path.join(
-        args.output_dir, 'tydiqa.goldp.%s.train.json' % LANG2ISO[lang])
+        args.output_dir, 'tydiqa.%s.train.json' % LANG2ISO[lang])
     with open(out_file, 'w') as f:
       json.dump({'data': data, 'version': version}, f)
 
@@ -455,7 +456,7 @@ def tydiqa_preprocess(args):
   assert os.path.exists(dev_dir)
   for lang, iso in LANG2ISO.items():
     src_file = os.path.join(dev_dir, 'tydiqa-goldp-dev-%s.json' % lang)
-    dst_file = os.path.join(dev_dir, 'tydiqa.goldp.%s.dev.json' % iso)
+    dst_file = os.path.join(dev_dir, 'tydiqa.%s.dev.json' % iso)
     os.rename(src_file, dst_file)
 
   # Remove the test annotations to prevent accidental cheating

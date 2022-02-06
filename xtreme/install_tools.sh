@@ -34,7 +34,7 @@ cd $LIB
 
 pip install seqeval
 pip install tensorboardx
-pip install networkx==2.3
+pip install networkx==1.11
 
 # install XLM tokenizer
 pip install sacremoses

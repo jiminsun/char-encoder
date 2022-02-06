@@ -43,7 +43,7 @@ function download_xnli {
 # download PAWS-X dataset
 function download_pawsx {
     cd $DIR
-    wget https://storage.googleapis.com/paws/pawsx/x-final.tar.gz -q --show-progress
+    wget https://storage.googleapis.com/paws/pawsx/x-final.tar.gz -q
     tar xzf x-final.tar.gz -C $DIR/
     python $REPO/utils_preprocess.py \
       --data_dir $DIR/x-final \
@@ -91,9 +91,8 @@ function download_panx {
         base_dir=$DIR/panx_dataset/
         unzip -qq -j $DIR/AmazonPhotos.zip -d $base_dir
         cd $base_dir
-        langs=(ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu qu pl uk az lt pa gu ro)
+        langs=(ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu)
         for lg in ${langs[@]}; do
-            echo "$lg"
             tar xzf $base_dir/${lg}.tar.gz
             for f in dev test train; do mv $base_dir/$f $base_dir/${lg}-${f}; done
         done
@@ -105,21 +104,21 @@ function download_panx {
         rm -rf $base_dir
         echo "Successfully downloaded data at $DIR/panx" >> $DIR/download.log
     else
-        echo "Please download the AmazonPhotos.zip file on Amazon Cloud Drive manually and save it to $DIR/AmazonPhotos.zip"
+        echo "Please download the AmazonPhotos.zip file on Amazon Cloud Drive mannually and save it to $DIR/AmazonPhotos.zip"
         echo "https://www.amazon.com/clouddrive/share/d3KGCRCIYwhKJF0H3eWA26hjg2ZCRhjpEQtDL70FSBN"
     fi
 }
 
 function download_tatoeba {
     base_dir=$DIR/tatoeba-tmp/
-    wget https://github.com/facebookresearch/LASER/archive/main.zip
-    unzip -qq -o main.zip -d $base_dir/
-    mv $base_dir/LASER-main/data/tatoeba/v1/* $base_dir/
+    wget https://github.com/facebookresearch/LASER/archive/master.zip
+    unzip -qq -o master.zip -d $base_dir/
+    mv $base_dir/LASER-master/data/tatoeba/v1/* $base_dir/
     python $REPO/utils_preprocess.py \
       --data_dir $base_dir \
       --output_dir $DIR/tatoeba \
       --task tatoeba
-    rm -rf $base_dir main.zip
+    rm -rf $base_dir master.zip
     echo "Successfully downloaded data at $DIR/tatoeba" >> $DIR/download.log
 }
 
@@ -143,8 +142,8 @@ function download_squad {
     echo "download squad"
     base_dir=$DIR/squad/
     mkdir -p $base_dir && cd $base_dir
-    wget https://raw.githubusercontent.com/rajpurkar/SQuAD-explorer/master/dataset/train-v1.1.json -q --show-progress
-    wget https://raw.githubusercontent.com/rajpurkar/SQuAD-explorer/master/dataset/dev-v1.1.json -q --show-progress
+    wget https://raw.githubusercontent.com/rajpurkar/SQuAD-explorer/master/dataset/train-v1.1.json -q
+    wget https://raw.githubusercontent.com/rajpurkar/SQuAD-explorer/master/dataset/dev-v1.1.json -q
     echo "Successfully downloaded data at $DIR/squad"  >> $DIR/download.log
 }
 
@@ -153,7 +152,7 @@ function download_xquad {
     base_dir=$DIR/xquad/
     mkdir -p $base_dir && cd $base_dir
     for lang in ar de el en es hi ru th tr vi zh; do
-      wget https://raw.githubusercontent.com/deepmind/xquad/master/xquad.${lang}.json -q --show-progress
+      wget https://raw.githubusercontent.com/deepmind/xquad/master/xquad.${lang}.json -q
     done
     python $REPO/utils_preprocess.py --data_dir $base_dir --output_dir $base_dir --task xquad
     echo "Successfully downloaded data at $DIR/xquad" >> $DIR/download.log
@@ -164,7 +163,7 @@ function download_mlqa {
     base_dir=$DIR/mlqa/
     mkdir -p $base_dir && cd $base_dir
     zip_file=MLQA_V1.zip
-    wget https://dl.fbaipublicfiles.com/MLQA/${zip_file} -q --show-progress
+    wget https://dl.fbaipublicfiles.com/MLQA/${zip_file} -q
     unzip -qq ${zip_file}
     rm ${zip_file}
     python $REPO/utils_preprocess.py --data_dir $base_dir/MLQA_V1/test --output_dir $base_dir --task mlqa
@@ -177,8 +176,8 @@ function download_tydiqa {
     mkdir -p $base_dir && cd $base_dir
     tydiqa_train_file=tydiqa-goldp-v1.1-train.json
     tydiqa_dev_file=tydiqa-goldp-v1.1-dev.tgz
-    wget https://storage.googleapis.com/tydiqa/v1.1/${tydiqa_train_file} -q --show-progress
-    wget https://storage.googleapis.com/tydiqa/v1.1/${tydiqa_dev_file} -q --show-progress
+    wget https://storage.googleapis.com/tydiqa/v1.1/${tydiqa_train_file} -q
+    wget https://storage.googleapis.com/tydiqa/v1.1/${tydiqa_dev_file} -q
     tar -xf ${tydiqa_dev_file}
     rm ${tydiqa_dev_file}
     out_dir=$base_dir/tydiqa-goldp-v1.1-train
@@ -187,44 +186,13 @@ function download_tydiqa {
     echo "Successfully downloaded data at $DIR/tydiqa" >> $DIR/download.log
 }
 
-function download_xcopa {
-    echo "download xcopa"
-    langs=(et ht id it qu sw ta th tr vi zh)
-    base_dir=$DIR/xcopa/
-    mkdir -p $base_dir && cd $base_dir
-    wget https://dl.fbaipublicfiles.com/glue/superglue/data/v2/COPA.zip
-    unzip COPA.zip
-    for split in train val test; do
-      mv COPA/${split}.jsonl ${split}.en.jsonl
-    done
-    rm -r -f COPA.zip COPA
-    for lang in ${langs[@]}; do
-      wget https://raw.githubusercontent.com/cambridgeltl/xcopa/master/data/${lang}/val.${lang}.jsonl -q --show-progress
-      wget https://raw.githubusercontent.com/cambridgeltl/xcopa/master/data/${lang}/test.${lang}.jsonl -q --show-progress
-    done
-    echo "Successfully downloaded data at $DIR/xcopa" >> $DIR/download.log
-}
-
-function download_siqa {
-    echo "download siqa"
-    base_dir=$DIR/siqa/
-    mkdir -p $base_dir && cd $base_dir
-    siqa_file=socialIQa_v1.4.tgz
-    wget https://maartensap.github.io/social-iqa/data/${siqa_file}
-    tar -xf ${siqa_file}
-    rm ${siqa_file}
-    echo "Successfully downloaded data at $DIR/siqa" >> $DIR/download.log
-}
-
-download_xnli
-download_pawsx
-download_tatoeba
-download_bucc18
-download_squad
-download_xquad
-download_mlqa
-download_tydiqa
+#download_xnli
+#download_pawsx
+##download_tatoeba
+##download_bucc18
+##download_squad
+##download_xquad
+##download_mlqa
+#download_tydiqa
 download_udpos
 download_panx
-download_xcopa
-download_siqa

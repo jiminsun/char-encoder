@@ -18,7 +18,7 @@ MODEL=${1:-bert-base-multilingual-cased}
 TASK=${2:-pawsx}
 GPU=${3:-0}
 DATA_DIR=${4:-"$REPO/download/"}
-OUT_DIR=${5:-"$REPO/outputs-temp/"}
+OUT_DIR=${5:-"$REPO/outputs/"}
 echo "Fine-tuning $MODEL on $TASK using GPU $GPU"
 echo "Load data from $DATA_DIR, and save models to $OUT_DIR"
 

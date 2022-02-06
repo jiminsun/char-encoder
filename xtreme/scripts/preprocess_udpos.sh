@@ -18,18 +18,22 @@ MODEL=${1:-bert-base-multilingual-cased}
 DATA_DIR=${2:-"$REPO/download/"}
 
 TASK='udpos'
-MAXL=128
-LANGS='af,ar,bg,de,el,en,es,et,eu,fa,fi,fr,he,hi,hu,id,it,ja,kk,ko,mr,nl,pt,ru,ta,te,th,tl,tr,ur,vi,yo,zh,lt,pl,uk,wo,ro'
+#MAXL=128
+LANGS='af,ar,bg,de,el,en,es,et,eu,fa,fi,fr,he,hi,hu,id,it,ja,kk,ko,mr,nl,pt,ru,ta,te,th,tl,tr,ur,vi,yo,zh'
 LC=""
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
+  MAXL=512
 elif [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-mlm-tlm-xnli15-1024" ]; then
   MODEL_TYPE="xlm"
+  MAXL=512
   LC=" --do_lower_case"
 elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
   MODEL_TYPE="xlmr"
+  MAXL=512
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
+  MAXL=2048
 fi
 
 SAVE_DIR="$DATA_DIR/${TASK}/udpos_processed_maxlen${MAXL}"

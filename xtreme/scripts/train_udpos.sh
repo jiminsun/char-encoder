@@ -59,7 +59,7 @@ python3 $REPO/third_party/run_tag.py \
   --labels $DATA_DIR/labels.txt \
   --model_name_or_path $MODEL \
   --output_dir $OUTPUT_DIR \
-  --max_seq_length  $MAX_LENGTH \
+  --max_seq_length $MAXL \
   --num_train_epochs $NUM_EPOCHS \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \

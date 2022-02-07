@@ -61,7 +61,7 @@ python3 $REPO/utils_preprocess.py \
   --model_type $MODEL_TYPE \
   --max_len $MAXL \
   --output_dir $SAVE_DIR \
-  --languages $LANGS $LC >> $SAVE_DIR/preprocess.log
+  --languages $LANG $LC >> $SAVE_DIR/preprocess.log
 if [ ! -f $SAVE_DIR/labels.txt ]; then
   cat $SAVE_DIR/*/*.${MODEL} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
 fi
@@ -86,8 +86,8 @@ python $REPO/third_party/run_tag.py \
   --do_train \
   --do_eval \
   --do_predict \
-  --predict_langs $LANGS \
-  --train_langs en \
+  --predict_langs $LANG \
+  --train_langs $LANG \
   --log_file $OUTPUT_DIR/train.log \
   --eval_all_checkpoints \
   --eval_patience -1 \

@@ -54,8 +54,9 @@ mkdir -p $MODEL_PATH
 
 # Train on TyDiQa-GoldP $LANG train file
 TASK_DATA_DIR=${DATA_DIR}/tydiqa
-TRAIN_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-train/tydiqa.goldp.${LANG}.train.json
-PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.goldp.${LANG}.dev.json
+TRAIN_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-train/tydiqa.${LANG}.train.json
+PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.${LANG}.dev.json
+# tydiqa.en.train.json
 
 # train
 CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \

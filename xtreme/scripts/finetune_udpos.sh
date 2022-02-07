@@ -55,7 +55,7 @@ fi
 SAVE_DIR="$DATA_DIR/${TASK}/${LANG}_${MODEL}_processed_maxlen${MAXL}"
 mkdir -p $SAVE_DIR
 python3 $REPO/utils_preprocess.py \
-  --data_dir $DATA_DIR/${TASK}/ \
+  --data_dir $DATA_DIR/${TASK} \
   --task udpos_tokenize \
   --model_name_or_path $MODEL \
   --model_type $MODEL_TYPE \
@@ -87,6 +87,7 @@ python3 $REPO/third_party/run_tag.py \
   --do_predict \
   --do_predict_dev \
   --evaluate_during_training \
+  --train_langs $LANG \
   --predict_langs $LANG \
   --log_file $OUTPUT_DIR/train.log \
   --eval_all_checkpoints \

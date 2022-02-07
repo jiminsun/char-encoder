@@ -39,6 +39,12 @@ elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
   MAXL=2048
+elif [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
+  MODEL_TYPE="mt5"
+  MAXL=1024
+elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
+  MODEL_TYPE="byt5"
+  MAXL=1024
 fi
 
 if [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-roberta-large" ]; then

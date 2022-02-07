@@ -45,7 +45,16 @@ elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
   MAXL=2048
   MAX_QUERY_LEN=256
+elif [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
+  MODEL_TYPE="mt5"
+  MAXL=1024
+  MAX_QUERY_LEN=128
+elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
+  MODEL_TYPE="byt5"
+  MAXL=1024
+  MAX_QUERY_LEN=128
 fi
+
 
 # Model path where trained model should be stored
 MODEL_PATH=$OUT_DIR/$SRC/${MODEL}_LR${LR}_EPOCH${NUM_EPOCHS}_maxlen${MAXL}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}

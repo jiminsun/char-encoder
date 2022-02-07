@@ -73,7 +73,7 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \
   --per_gpu_train_batch_size ${BATCH_SIZE} \
   --learning_rate ${LR} \
   --num_train_epochs ${NUM_EPOCHS} \
-  --max_seq_length $MAXL \
+  --max_seq_length ${MAXL} \
   --max_query_length ${MAX_QUERY_LEN} \
   --doc_stride 128 \
   --save_steps -1 \

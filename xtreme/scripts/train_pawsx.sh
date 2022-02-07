@@ -24,22 +24,21 @@ export CUDA_VISIBLE_DEVICES=$GPU
 TASK='pawsx'
 LR=2e-5
 EPOCH=5
-#MAX_LENGTH=128
 LANGS="de,en,es,fr,ja,ko,zh"
 LC=""
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
-  MAX_LENGTH=512
+  MAXL=512
 elif [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-mlm-tlm-xnli15-1024" ]; then
   MODEL_TYPE="xlm"
-  MAX_LENGTH=512
+  MAXL=512
   LC=" --do_lower_case"
 elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
   MODEL_TYPE="xlmr"
-  MAX_LENGTH=512
+  MAXL=512
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
-  MAX_LENGTH=2048
+  MAXL=2048
 fi
 
 if [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-roberta-large" ]; then
@@ -69,7 +68,7 @@ python $PWD/third_party/run_classify.py \
   --per_gpu_train_batch_size $BATCH_SIZE \
   --learning_rate $LR \
   --num_train_epochs $EPOCH \
-  --max_seq_length $MAX_LENGTH \
+  --max_seq_length $MAXL \
   --output_dir $SAVE_DIR \
   --eval_all_checkpoints \
   --overwrite_output_dir \

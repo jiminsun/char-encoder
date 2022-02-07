@@ -28,17 +28,17 @@ LR=2e-5
 LC=""
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
-  MAX_LENGTH=512
+  MAXL=512
 elif [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-mlm-tlm-xnli15-1024" ]; then
   MODEL_TYPE="xlm"
-  MAX_LENGTH=512
+  MAXL=512
   LC=" --do_lower_case"
 elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
   MODEL_TYPE="xlmr"
-  MAX_LENGTH=512
+  MAXL=512
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
-  MAX_LENGTH=2048
+  MAXL=2048
 fi
 
 if [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-roberta-large" ]; then
@@ -49,8 +49,8 @@ else
   GRAD_ACC=4
 fi
 
-DATA_DIR=$DATA_DIR/${TASK}/${TASK}_processed_maxlen${MAX_LENGTH}/
-OUTPUT_DIR="$OUT_DIR/$TASK/${MODEL}-LR${LR}-epoch${NUM_EPOCHS}-MaxLen${MAX_LENGTH}/"
+DATA_DIR=$DATA_DIR/${TASK}/${TASK}_processed_maxlen${MAXL}/
+OUTPUT_DIR="$OUT_DIR/$TASK/${MODEL}-LR${LR}-epoch${NUM_EPOCHS}-MaxLen${MAXL}/"
 mkdir -p $OUTPUT_DIR
 python $REPO/third_party/run_tag.py \
   --data_dir $DATA_DIR \
@@ -58,7 +58,7 @@ python $REPO/third_party/run_tag.py \
   --labels $DATA_DIR/labels.txt \
   --model_name_or_path $MODEL \
   --output_dir $OUTPUT_DIR \
-  --max_seq_length  $MAX_LENGTH \
+  --max_seq_length  $MAXL \
   --num_train_epochs $NUM_EPOCHS \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \

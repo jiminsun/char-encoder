@@ -637,11 +637,11 @@ def main():
       )
     )
 
-  logging.basicConfig(handlers=[logging.FileHandler(os.path.join(args.output_dir, args.log_file)), logging.StreamHandler()],
-                      format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                      datefmt='%m/%d/%Y %H:%M:%S',
-                      level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
-  logging.info("Input args: %r" % args)
+  # logging.basicConfig(handlers=[logging.FileHandler(os.path.join(args.output_dir, args.log_file)), logging.StreamHandler()],
+  #                     format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+  #                     datefmt='%m/%d/%Y %H:%M:%S',
+  #                     level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+  # logging.info("Input args: %r" % args)
 
   # Setup distant debugging if needed
   if args.server_ip and args.server_port:

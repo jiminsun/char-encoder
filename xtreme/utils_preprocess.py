@@ -89,8 +89,8 @@ def panx_tokenize_preprocess(args):
         files = ['dev', 'test']
     for file in files:
       infile = os.path.join(args.data_dir, f'{file}-{lang}.tsv')
-      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_name_or_path))
-      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_name_or_path))
+      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_name_or_path.replace('/', '-')))
+      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_name_or_path.replace('/', '-')))
       if os.path.exists(outfile) and os.path.exists(idxfile):
         print(f'{outfile} and {idxfile} exist')
       else:

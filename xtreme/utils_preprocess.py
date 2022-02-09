@@ -80,10 +80,13 @@ def panx_tokenize_preprocess(args):
     out_dir = os.path.join(args.output_dir, lang)
     if not os.path.exists(out_dir):
       os.makedirs(out_dir)
-    if lang == 'en':
+    if len(args.languages.split(',')) == 1:
       files = ['dev', 'test', 'train']
     else:
-      files = ['dev', 'test']
+      if lang == 'en':
+        files = ['dev', 'test', 'train']
+      else:
+        files = ['dev', 'test']
     for file in files:
       infile = os.path.join(args.data_dir, f'{file}-{lang}.tsv')
       outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_name_or_path))
@@ -186,7 +189,6 @@ def udpos_tokenize_preprocess(args):
         _preprocess_one_file(infile, outfile, idxfile, tokenizer, args.max_len)
         print(f'finish preprocessing {outfile}')
 
-
 def udpos_preprocess(args):
   def _read_one_file(file):
     data = []
@@ -205,6 +207,7 @@ def udpos_preprocess(args):
         lines.append(line.strip())
         assert len(sent) == int(items[0]), 'line={}, sent={}, tag={}'.format(line, sent, tag)
     return data
+
 
   def isfloat(value):
     try:

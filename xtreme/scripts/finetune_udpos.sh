@@ -60,7 +60,7 @@ else
 fi
 
 # preprocess
-SAVE_DIR="$DATA_DIR/${TASK}/${MODEL_PREFIX}_processed_maxlen${MAXL}"
+SAVE_DIR="$DATA_DIR/${TASK}/${LANG}_${MODEL_PREFIX}_processed_maxlen${MAXL}"
 mkdir -p $SAVE_DIR
 python3 $REPO/utils_preprocess.py \
   --data_dir $DATA_DIR/${TASK} \

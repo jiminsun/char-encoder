@@ -45,7 +45,8 @@ fi
 
 MODEL_PREFIX=$(echo $MODEL | sed "s/\//-/")  # change google/canine-c to google-canine-c
 
-SAVE_DIR="$DATA_DIR/$TASK/${MODEL}_processed_maxlen${MAXL}"
+SAVE_DIR="$DATA_DIR/${TASK}/${MODEL_PREFIX}_processed_maxlen${MAXL}"
+
 mkdir -p $SAVE_DIR
 python3 $REPO/utils_preprocess.py \
   --data_dir $DATA_DIR/$TASK/ \
@@ -57,5 +58,5 @@ python3 $REPO/utils_preprocess.py \
   --output_dir $SAVE_DIR \
   --languages $LANGS $LC >> $SAVE_DIR/preprocess.log
 if [ ! -f $SAVE_DIR/labels.txt ]; then
-  cat $SAVE_DIR/*/*.${MODEL} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
+  cat $SAVE_DIR/*/*.${MODEL_PREFIX} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
 fi

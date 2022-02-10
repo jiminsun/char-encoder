@@ -58,5 +58,5 @@ python3 $REPO/utils_preprocess.py \
   --languages $LANGS $LC >> $SAVE_DIR/process.log
 if [ ! -f $SAVE_DIR/labels.txt ]; then
   echo "create label"
-  cat $SAVE_DIR/*/*.${MODEL} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
+  cat $SAVE_DIR/*/*.${MODEL_PREFIX} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
 fi

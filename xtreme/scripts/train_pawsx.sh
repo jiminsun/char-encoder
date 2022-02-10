@@ -56,6 +56,7 @@ else
   GRAD_ACC=4
 fi
 
+DATA_DIR="$DATA_DIR/${TASK}/${MODEL}_udpos_processed_maxlen${MAXL}"
 SAVE_DIR="${OUT_DIR}/${TASK}/${MODEL}-LR${LR}-epoch${EPOCH}-MaxLen${MAXL}/"
 mkdir -p $SAVE_DIR
 
@@ -69,7 +70,7 @@ python $PWD/third_party/run_classify.py \
   --do_predict \
   --train_split train \
   --test_split test \
-  --data_dir $DATA_DIR/$TASK/ \
+  --data_dir $DATA_DIR \
   --gradient_accumulation_steps $GRAD_ACC \
   --save_steps 200 \
   --per_gpu_train_batch_size $BATCH_SIZE \

@@ -45,6 +45,10 @@ from transformers import (
   XLMRobertaConfig,
   XLMRobertaTokenizer,
   XLMRobertaForSequenceClassification,
+  ByT5Tokenizer,
+  T5Config,
+  MT5Tokenizer,
+  MT5Config,
   get_linear_schedule_with_warmup,
 )
 

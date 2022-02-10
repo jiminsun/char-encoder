@@ -337,7 +337,7 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode, l
 
   # Load data features from cache or dataset file
   cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}_{}".format(mode, lang,
-    list(filter(None, args.model_name_or_path.split("/"))).pop(),
+    list(filter(None, args.model_prefix.split("/"))).pop(),
     str(args.max_seq_length)))
   if os.path.exists(cached_features_file) and not args.overwrite_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
@@ -347,7 +347,7 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode, l
     logger.info("all languages = {}".format(lang))
     features = []
     for lg in langs:
-      data_file = os.path.join(args.data_dir, lg, "{}.{}".format(mode, args.model_name_or_path))
+      data_file = os.path.join(args.data_dir, lg, "{}.{}".format(mode, args.model_prefix))
       logger.info("Creating features from dataset file at {} in language {}".format(data_file, lg))
       examples = read_examples_from_file(data_file, lg, lang2id)
       features_lg = convert_examples_to_features(examples, labels, args.max_seq_length, tokenizer,
@@ -486,6 +486,7 @@ def main():
   parser.add_argument("--log_file", type=str, default=None, help="log file")
   parser.add_argument("--eval_patience", type=int, default=-1, help="wait N times of decreasing dev score before early stop during training")
   args = parser.parse_args()
+  args.model_prefix = args.model_name_or_path.replace('/', '-')
 
   if os.path.exists(args.output_dir) and os.listdir(
       args.output_dir) and args.do_train and not args.overwrite_output_dir:
@@ -537,6 +538,7 @@ def main():
     torch.distributed.barrier()
 
   args.model_type = args.model_type.lower()
+  
   config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
   config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path,
                       num_labels=num_labels,
@@ -636,7 +638,7 @@ def main():
     output_test_results_file = os.path.join(args.output_dir, "test_results.txt")
     with open(output_test_results_file, "a") as result_writer:
       for lang in args.predict_langs.split(','):
-        if not os.path.exists(os.path.join(args.data_dir, lang, 'test.{}'.format(args.model_name_or_path))):
+        if not os.path.exists(os.path.join(args.data_dir, lang, 'test.{}'.format(args.model_prefix))):
           logger.info("Language {} does not exist".format(lang))
           continue
         result, predictions = evaluate(args, model, tokenizer, labels, pad_token_label_id, mode="test", lang=lang, lang2id=lang2id)
@@ -647,7 +649,7 @@ def main():
           result_writer.write("{} = {}\n".format(key, str(result[key])))
         # Save predictions
         output_test_predictions_file = os.path.join(args.output_dir, "test_{}_predictions.txt".format(lang))
-        infile = os.path.join(args.data_dir, lang, "test.{}".format(args.model_name_or_path))
+        infile = os.path.join(args.data_dir, lang, "test.{}".format(args.model_prefix))
         idxfile = infile + '.idx'
         save_predictions(args, predictions, output_test_predictions_file, infile, idxfile)
 
@@ -661,7 +663,7 @@ def main():
     output_test_results_file = os.path.join(args.output_dir, "dev_results.txt")
     with open(output_test_results_file, "w") as result_writer:
       for lang in args.predict_langs.split(','):
-        if not os.path.exists(os.path.join(args.data_dir, lang, 'dev.{}'.format(args.model_name_or_path))):
+        if not os.path.exists(os.path.join(args.data_dir, lang, 'dev.{}'.format(args.model_prefix))):
           logger.info("Language {} does not exist".format(lang))
           continue
         result, predictions = evaluate(args, model, tokenizer, labels, pad_token_label_id, mode="dev", lang=lang, lang2id=lang2id)
@@ -672,7 +674,7 @@ def main():
           result_writer.write("{} = {}\n".format(key, str(result[key])))
         # Save predictions
         output_test_predictions_file = os.path.join(args.output_dir, "dev_{}_predictions.txt".format(lang))
-        infile = os.path.join(args.data_dir, lang, "dev.{}".format(args.model_name_or_path))
+        infile = os.path.join(args.data_dir, lang, "dev.{}".format(args.model_prefix))
         idxfile = infile + '.idx'
         save_predictions(args, predictions, output_test_predictions_file, infile, idxfile)
 

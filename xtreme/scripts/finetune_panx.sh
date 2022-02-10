@@ -57,22 +57,26 @@ else
   GRAD_ACC=4
 fi
 
-SAVE_DIR="$DATA_DIR/${TASK}/${LANG}_${MODEL}_processed_maxlen${MAXL}"
+MODEL_PREFIX=$(echo $MODEL | sed "s/\//-/")  # change google/canine-c to google-canine-c
+echo "$MODEL_PREFIX"
+
+SAVE_DIR="$DATA_DIR/${TASK}/${LANG}_${MODEL_PREFIX}_processed_maxlen${MAXL}"
 
 mkdir -p $SAVE_DIR
 python3 $REPO/utils_preprocess.py \
   --data_dir $DATA_DIR/$TASK/ \
   --task panx_tokenize \
   --model_name_or_path $MODEL \
+  --model_prefix $MODEL_PREFIX \
   --model_type $MODEL_TYPE \
   --max_len $MAXL \
   --output_dir $SAVE_DIR \
   --languages $LANG $LC >> $SAVE_DIR/preprocess.log
 if [ ! -f $SAVE_DIR/labels.txt ]; then
-  cat $SAVE_DIR/*/*.${MODEL} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
+  cat $SAVE_DIR/*/*.${MODEL_PREFIX} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
 fi
 
-OUTPUT_DIR="$OUT_DIR/${TASK}/${MODEL}-LR${LR}-epoch${NUM_EPOCHS}-MaxLen${MAXL}/"
+OUTPUT_DIR="$OUT_DIR/${TASK}/${LANG}_${MODEL_PREFIX}-LR${LR}-epoch${NUM_EPOCHS}-MaxLen${MAXL}/"
 
 mkdir -p $OUTPUT_DIR
 python $REPO/third_party/run_tag.py \

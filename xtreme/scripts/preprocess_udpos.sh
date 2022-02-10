@@ -43,12 +43,15 @@ elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ 
 fi
 
 
-SAVE_DIR="$DATA_DIR/${TASK}/udpos_processed_maxlen${MAXL}"
+MODEL_PREFIX=$(echo $MODEL | sed "s/\//-/")  # change google/canine-c to google-canine-c
+
+SAVE_DIR="$DATA_DIR/${TASK}/${MODEL_PREFIX}_udpos_processed_maxlen${MAXL}"
 mkdir -p $SAVE_DIR
 python3 $REPO/utils_preprocess.py \
   --data_dir $DATA_DIR/${TASK}/ \
   --task udpos_tokenize \
   --model_name_or_path $MODEL \
+  --model_prefix $MODEL_PREFIX \
   --model_type $MODEL_TYPE \
   --max_len $MAXL \
   --output_dir $SAVE_DIR \

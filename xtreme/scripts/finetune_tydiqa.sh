@@ -56,6 +56,7 @@ elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ 
   MAX_QUERY_LEN=128
 fi
 
+
 # Model path where trained model should be stored
 MODEL_PATH=$OUT_DIR/${TASK}/${LANG}_${MODEL}_LR${LR}_EPOCH${NUM_EPOCHS}_maxlen${MAXL}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}
 mkdir -p $MODEL_PATH

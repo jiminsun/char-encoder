@@ -89,8 +89,8 @@ def panx_tokenize_preprocess(args):
         files = ['dev', 'test']
     for file in files:
       infile = os.path.join(args.data_dir, f'{file}-{lang}.tsv')
-      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_name_or_path.replace('/', '-')))
-      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_name_or_path.replace('/', '-')))
+      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_prefix))
+      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_prefix))
       if os.path.exists(outfile) and os.path.exists(idxfile):
         print(f'{outfile} and {idxfile} exist')
       else:
@@ -175,14 +175,17 @@ def udpos_tokenize_preprocess(args):
     out_dir = os.path.join(args.output_dir, lang)
     if not os.path.exists(out_dir):
       os.makedirs(out_dir)
-    if lang == 'en':
+    if len(args.languages.split(',')) == 1:
       files = ['dev', 'test', 'train']
     else:
-      files = ['dev', 'test']
+      if lang == 'en':
+        files = ['dev', 'test', 'train']
+      else:
+        files = ['dev', 'test']
     for file in files:
       infile = os.path.join(args.data_dir, "{}-{}.tsv".format(file, lang))
-      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_name_or_path))
-      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_name_or_path))
+      outfile = os.path.join(out_dir, "{}.{}".format(file, args.model_prefix))
+      idxfile = os.path.join(out_dir, "{}.{}.idx".format(file, args.model_prefix))
       if os.path.exists(outfile) and os.path.exists(idxfile):
         print(f'{outfile} and {idxfile} exist')
       else:
@@ -504,6 +507,8 @@ if __name__ == "__main__":
   parser.add_argument("--task", default="panx", type=str, required=True,
                       help="The task name")
   parser.add_argument("--model_name_or_path", default="bert-base-multilingual-cased", type=str,
+                      help="The pre-trained model")
+  parser.add_argument("--model_prefix", default="bert-base-multilingual-cased", type=str,
                       help="The pre-trained model")
   parser.add_argument("--model_type", default="bert", type=str,
                       help="model type")

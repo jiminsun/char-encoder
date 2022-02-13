@@ -14,7 +14,7 @@
 # limitations under the License.
 
 REPO=$PWD
-DIR=$REPO/download/
+DIR=$REPO/download-new/
 mkdir -p $DIR
 
 # download XNLI dataset
@@ -194,5 +194,5 @@ function download_tydiqa {
 ##download_xquad
 ##download_mlqa
 #download_tydiqa
-download_udpos
+#download_udpos
 download_panx

@@ -112,10 +112,10 @@ def panx_preprocess(args):
           idx = items[0].find(':')
           if idx != -1:
             token = items[0][idx+1:].strip()
-            if 'test' in infile:
-              fout.write(f'{token}\n')
-            else:
-              fout.write(f'{token}\t{label}\n')
+            # if 'test' in infile:
+            #   fout.write(f'{token}\n')
+            # else:
+            fout.write(f'{token}\t{label}\n')
         else:
           fout.write('\n')
   if not os.path.exists(args.output_dir):
@@ -243,10 +243,10 @@ def udpos_preprocess(args):
           with open(prefix + '.mt.tsv', 'w') as fout:
             for idx, (sent, tag, _) in enumerate(data[split]):
               newline = '\n' if idx != len(data[split]) - 1 else ''
-              if split == 'test':
-                fout.write('{}{}'.format(' '.join(sent, newline)))
-              else:
-                fout.write('{}\t{}{}'.format(' '.join(sent), ' '.join(tag), newline))
+              # if split == 'test':
+              #   fout.write('{}{}'.format(' '.join(sent, newline)))
+              # else:
+              fout.write('{}\t{}{}'.format(' '.join(sent), ' '.join(tag), newline))
           check_file(prefix + '.mt.tsv')
           print('  - finish checking ' + prefix + '.mt.tsv')
         elif suffix == 'tsv':
@@ -254,10 +254,10 @@ def udpos_preprocess(args):
             for sidx, (sent, tag, _) in enumerate(data[split]):
               for widx, (w, t) in enumerate(zip(sent, tag)):
                 newline = '' if (sidx == len(data[split]) - 1) and (widx == len(sent) - 1) else '\n'
-                if split == 'test':
-                  fout.write('{}{}'.format(w, newline))
-                else:
-                  fout.write('{}\t{}{}'.format(w, t, newline))
+                # if split == 'test':
+                #   fout.write('{}{}'.format(w, newline))
+                # else:
+                fout.write('{}\t{}{}'.format(w, t, newline))
               fout.write('\n')
         elif suffix == 'conll':
           with open(prefix + '.conll', 'w') as fout:
@@ -326,7 +326,7 @@ def pawsx_preprocess(args):
       file = split2file[split]
       infile = os.path.join(args.data_dir, lang, "{}.tsv".format(file))
       outfile = os.path.join(args.output_dir, "{}-{}.tsv".format(split, lang))
-      _preprocess_one_file(infile, outfile, remove_label=(split == 'test'))
+      _preprocess_one_file(infile, outfile, remove_label=False)
       print(f'finish preprocessing {outfile}')
 
 def xnli_preprocess(args):
@@ -348,10 +348,10 @@ def xnli_preprocess(args):
       with open(outfile, 'w') as fout:
         writer = csv.writer(fout, delimiter='\t')
         for (sent1, sent2, label) in pairs:
-          if split == 'test':
-            writer.writerow([sent1, sent2])
-          else:
-            writer.writerow([sent1, sent2, label])
+          # if split == 'test':
+            # writer.writerow([sent1, sent2])
+          # else:
+          writer.writerow([sent1, sent2, label])
       print(f'finish preprocess {outfile}')
 
   def _preprocess_train_file(infile, outfile):
@@ -489,7 +489,7 @@ def remove_qa_test_annotations(test_dir):
               assert context[a_start:a_end] == a_text
             new_data.append({'paragraphs': [{
                 'context': context,
-                'qas': [{'answers': [{'answer_start': 0, 'text': ''}],
+                'qas': [{'answers': qa['answers'],
                          'question': question,
                          'id': question_id}]}]})
     with open(test_file, 'w') as f:

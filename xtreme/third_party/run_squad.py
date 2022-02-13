@@ -627,7 +627,7 @@ def main():
   parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps.")
   parser.add_argument(
     "--n_best_size",
-    default=20,
+    default=30,
     type=int,
     help="The total number of n-best predictions to generate in the nbest_predictions.json output file.",
   )

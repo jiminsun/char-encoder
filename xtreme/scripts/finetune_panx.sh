@@ -23,7 +23,7 @@ OUT_DIR=${5:-"$REPO/outputs/"}
 TASK='panx'
 
 export CUDA_VISIBLE_DEVICES=$GPU
-#LANGS="ar,he,vi,id,jv,ms,tl,eu,ml,ta,te,af,nl,en,de,el,bn,hi,mr,ur,fa,fr,it,pt,es,bg,ru,ja,ka,ko,th,sw,yo,my,zh,kk,tr,et,fi,hu,qu,pl,uk,az,lt,pa,gu,ro"
+# LANGS=(ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu)
 NUM_EPOCHS=10
 LR=2e-5
 

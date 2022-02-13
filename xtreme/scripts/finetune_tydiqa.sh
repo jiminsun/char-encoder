@@ -29,31 +29,41 @@ GRAD_ACC=8
 
 #MAXL=384
 LR=3e-5
-NUM_EPOCHS=3.0
+NUM_EPOCHS=5.0
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
   MAXL=512
   MAX_QUERY_LEN=64
+  MAX_ANSWER_LEN=30
+  DOC_STRIDE=128
 elif [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-mlm-tlm-xnli15-1024" ]; then
   MODEL_TYPE="xlm"
   MAXL=512
   MAX_QUERY_LEN=64
+  MAX_ANSWER_LEN=30
+  DOC_STRIDE=128
 elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
   MODEL_TYPE="xlm-roberta"
   MAXL=512
   MAX_QUERY_LEN=64
+  MAX_ANSWER_LEN=30
+  DOC_STRIDE=128
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
   MAXL=2048
   MAX_QUERY_LEN=256
+  MAX_ANSWER_LEN=100
+  DOC_STRIDE=512
 elif [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
   MODEL_TYPE="mt5"
   MAXL=1024
   MAX_QUERY_LEN=128
+  DOC_STRIDE=256
 elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
   MODEL_TYPE="byt5"
   MAXL=1024
   MAX_QUERY_LEN=128
+  DOC_STRIDE=256
 fi
 
 
@@ -81,7 +91,8 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \
   --num_train_epochs ${NUM_EPOCHS} \
   --max_seq_length ${MAXL} \
   --max_query_length ${MAX_QUERY_LEN} \
-  --doc_stride 128 \
+  --max_answer_length ${MAX_ANSWER_LEN} \
+  --doc_stride ${DOC_STRIDE} \
   --save_steps -1 \
   --overwrite_output_dir \
   --gradient_accumulation_steps ${GRAD_ACC} \
@@ -93,4 +104,4 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \
   --eval_lang ${LANG}
 
 # predict
-bash scripts/predict_qa.sh $MODEL $MODEL_PATH $TGT $GPU $DATA_DIR
+bash scripts/predict_qa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR

@@ -29,6 +29,10 @@ elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
   MODEL_TYPE="xlm-roberta"
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
+elif [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
+  MODEL_TYPE="mt5"
+elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
+  MODEL_TYPE="byt5"
 fi
 
 if [ ! -d "${MODEL_PATH}" ]; then

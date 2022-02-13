@@ -187,7 +187,7 @@ def evaluate(prediction_folder, label_folder, verbose=False):
   prediction_tasks = next(os.walk(prediction_folder))[1]
   label_tasks = next(os.walk(label_folder))[1]
 
-  detail_scores = {}
+  detailed_scores = {}
   for task, langs in TASK2LANGS.items():
     if task in prediction_tasks and task in label_tasks:
       suffix = 'json' if task in GROUP2TASK['qa'] else 'tsv'
@@ -197,10 +197,14 @@ def evaluate(prediction_folder, label_folder, verbose=False):
         prediction_file = os.path.join(
             prediction_folder, task, f'test-{lg}.{suffix}')
         label_file = os.path.join(label_folder, task, f'test-{lg}.{suffix}')
-        score_lg = evaluate_one_task(
-            prediction_file, label_file, task, language=lg)
-        for metric in score_lg:
-          score[metric][lg] = score_lg[metric]
+        if os.path.isfile(prediction_file) and os.path.isfile(label_file):
+            score_lg = evaluate_one_task(
+                prediction_file, label_file, task, language=lg)
+            for metric in score_lg:
+              score[metric][lg] = score_lg[metric]
+        else:
+            pass
+            # print(f'{lg} does not exist yet')
       # average over all languages
       avg_score = {}
       for m in score:
@@ -222,7 +226,7 @@ def evaluate(prediction_folder, label_folder, verbose=False):
   # Display logic:
   overall_scores = {}
   all_tasks = set(TASK2LANGS.keys())
-  available_tasks = set(detail_scores.keys())
+  available_tasks = set(detailed_scores.keys())
 
   # If scores of all tasks are available, show overall score in the main table
   if all_tasks == available_tasks:

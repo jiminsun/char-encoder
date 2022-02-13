@@ -15,8 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Fine-tuning models for NER and POS tagging."""
-
 from __future__ import absolute_import, division, print_function
+
+import wandb
+wandb.init(project="xtreme", entity="jiminsun")
 
 import argparse
 import glob
@@ -487,6 +489,8 @@ def main():
   parser.add_argument("--eval_patience", type=int, default=-1, help="wait N times of decreasing dev score before early stop during training")
   args = parser.parse_args()
   args.model_prefix = args.model_name_or_path.replace('/', '-')
+
+  wandb.config.update(args)
 
   if os.path.exists(args.output_dir) and os.listdir(
       args.output_dir) and args.do_train and not args.overwrite_output_dir:

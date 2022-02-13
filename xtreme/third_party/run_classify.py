@@ -16,6 +16,8 @@
 # limitations under the License.
 """ Finetuning multi-lingual models on XNLI/PAWSX (Bert, XLM, XLMRoberta)."""
 
+import wandb
+wandb.init(project="xtreme", entity="jiminsun")
 
 import argparse
 import glob
@@ -239,6 +241,13 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           # Log metrics
           tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
           tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+
+          wandb.log({
+            "train/learning_rate": scheduler.get_lr()[0],
+            "train/loss": (tr_loss - logging_loss) / args.logging_steps,
+            "global_step": global_step,
+          })
+
           logging_loss = tr_loss
 
           # Only evaluate on single GPU otherwise metrics may not average well
@@ -258,7 +267,13 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
                 writer.write('{}={}\n'.format(language, result['acc']))
                 total += result['num']
                 total_correct += result['correct']
+                wandb.log({
+                  f"test/{language}/accuracy": result['acc']
+                })
               writer.write('total={}\n'.format(total_correct / total))
+              wandb.log({
+                f"test/average/accuracy": total_correct / total
+              })
 
           if args.save_only_best_checkpoint:          
             result = evaluate(args, model, tokenizer, split='dev', language=args.train_language, lang2id=lang2id, prefix=str(global_step))
@@ -371,12 +386,14 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
         sentences = np.append(sentences, inputs["input_ids"].detach().cpu().numpy(), axis=0)
 
     eval_loss = eval_loss / nb_eval_steps
+
     if args.output_mode == "classification":
       preds = np.argmax(preds, axis=1)
     else:
       raise ValueError("No other `output_mode` for XNLI.")
     result = compute_metrics(preds, out_label_ids)
     results.update(result)
+
 
     if output_file:
       logger.info("***** Save prediction ******")
@@ -396,6 +413,12 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
           else:
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
     logger.info("***** Eval results {} {} *****".format(prefix, language))
+
+    wandb.log({
+      "valid/loss": eval_loss,
+      f"valid/{language}/accuracy": result['acc']
+    })
+
     for key in sorted(result.keys()):
       logger.info("  %s = %s", key, str(result[key]))
 
@@ -628,6 +651,9 @@ def main():
   parser.add_argument("--server_ip", type=str, default="", help="For distant debugging.")
   parser.add_argument("--server_port", type=str, default="", help="For distant debugging.")
   args = parser.parse_args()
+  args.model_prefix = args.model_name_or_path.replace('/', '-')
+
+  wandb.config.update(args)
 
   if (
     os.path.exists(args.output_dir)
@@ -735,6 +761,7 @@ def main():
     model.to(args.device)
     train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
+
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
 

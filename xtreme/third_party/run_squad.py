@@ -16,6 +16,8 @@
 # limitations under the License.
 """Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
 
+import wandb
+wandb.init(project="xtreme", entity="jiminsun")
 
 import argparse
 import glob
@@ -683,6 +685,9 @@ def main():
   parser.add_argument("--eval_lang", type=str, default="en", help="The language of the test data")
 
   args = parser.parse_args()
+  args.model_prefix = args.model_name_or_path.replace('/', '-')
+
+  wandb.config.update(args)
 
   if (
     os.path.exists(args.output_dir)

@@ -196,6 +196,13 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id, lan
               tb_writer.add_scalar("eval_{}".format(key), value, global_step)
           tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
           tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+
+          wandb.log({
+            "train/learning_rate": scheduler.get_lr()[0],
+            "train/loss": (tr_loss - logging_loss) / args.logging_steps,
+            "global_step": global_step,
+          })
+
           logging_loss = tr_loss
 
         if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
@@ -322,6 +329,13 @@ def evaluate(args, model, tokenizer, labels, pad_token_label_id, mode, prefix=""
       "recall": recall_score(out_label_list, preds_list),
       "f1": f1_score(out_label_list, preds_list)
     }
+
+  wandb.log({"valid/loss": eval_loss})
+  for key, value in results.items():
+    if key != "loss":
+      wandb.log({
+        f"valid/{lang}/{key}": value
+      })
 
   if print_result:
     logger.info("***** Evaluation result %s in %s *****" % (prefix, lang))
@@ -491,6 +505,8 @@ def main():
   args.model_prefix = args.model_name_or_path.replace('/', '-')
 
   wandb.config.update(args)
+  wandb.run.name = args.task_name + '-' + wandb.run.name
+
 
   if os.path.exists(args.output_dir) and os.listdir(
       args.output_dir) and args.do_train and not args.overwrite_output_dir:
@@ -651,6 +667,9 @@ def main():
         result_writer.write("=====================\nlanguage={}\n".format(lang))
         for key in sorted(result.keys()):
           result_writer.write("{} = {}\n".format(key, str(result[key])))
+          wandb.log({
+            f"test/{lang}/{key}": result[key]
+          })
         # Save predictions
         output_test_predictions_file = os.path.join(args.output_dir, "test_{}_predictions.txt".format(lang))
         infile = os.path.join(args.data_dir, lang, "test.{}".format(args.model_prefix))

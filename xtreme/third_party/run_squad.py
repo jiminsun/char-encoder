@@ -266,8 +266,16 @@ def train(args, train_dataset, model, tokenizer):
             results = evaluate(args, model, tokenizer)
             for key, value in results.items():
               tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+
           tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
           tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+
+          wandb.log({
+            "train/learning_rate": scheduler.get_lr()[0],
+            "train/loss": (tr_loss - logging_loss) / args.logging_steps,
+            "global_step": global_step,
+          })
+
           logging_loss = tr_loss
 
         # Save model checkpoint
@@ -426,6 +434,11 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
 
   # Compute the F1 and exact scores.
   results = squad_evaluate(examples, predictions)
+
+  wandb.log({
+    f"valid/{args.task_name}-{language}/f1": results['f1']
+  })
+
   return results
 
 
@@ -688,6 +701,7 @@ def main():
   args.model_prefix = args.model_name_or_path.replace('/', '-')
 
   wandb.config.update(args)
+  wandb.run.name = args.task_name + '-' + wandb.run.name
 
   if (
     os.path.exists(args.output_dir)

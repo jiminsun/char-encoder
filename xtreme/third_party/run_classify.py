@@ -654,6 +654,7 @@ def main():
   args.model_prefix = args.model_name_or_path.replace('/', '-')
 
   wandb.config.update(args)
+  wandb.run.name = args.task_name + '-' + wandb.run.name
 
   if (
     os.path.exists(args.output_dir)

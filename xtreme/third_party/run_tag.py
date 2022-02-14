@@ -94,7 +94,10 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id, lan
 
   if args.max_steps > 0:
     t_total = args.max_steps
-    args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
+    try:
+      args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
+    except:
+      args.num_train_epochs = args.num_train_epochs
   else:
     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
@@ -106,7 +109,7 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id, lan
     {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0}
   ]
   optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-  scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
+  scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.warmup_steps * t_total), num_training_steps=t_total)
   if args.fp16:
     try:
       from apex import amp
@@ -419,6 +422,7 @@ def main():
             help="Path to pre-trained model or shortcut name selected in the list.")
   parser.add_argument("--output_dir", default=None, type=str, required=True,
             help="The output directory where the model predictions and checkpoints will be written.")
+  parser.add_argument("--task_name", default=None, type=str, required=True)
 
   ## Other parameters
   parser.add_argument("--labels", default="", type=str,
@@ -467,7 +471,7 @@ def main():
             help="Total number of training epochs to perform.")
   parser.add_argument("--max_steps", default=-1, type=int,
             help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-  parser.add_argument("--warmup_steps", default=0, type=int,
+  parser.add_argument("--warmup_steps", default=0.1, type=float,
             help="Linear warmup over warmup_steps.")
 
   parser.add_argument("--logging_steps", type=int, default=50,

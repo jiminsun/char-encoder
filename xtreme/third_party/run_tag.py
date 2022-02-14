@@ -333,12 +333,12 @@ def evaluate(args, model, tokenizer, labels, pad_token_label_id, mode, prefix=""
       "f1": f1_score(out_label_list, preds_list)
     }
 
-  wandb.log({"valid/loss": eval_loss})
-  for key, value in results.items():
-    if key != "loss":
-      wandb.log({
-        f"valid/{lang}/{key}": value
-      })
+    wandb.log({"valid/loss": eval_loss})
+    for key, value in results.items():
+      if key != "loss":
+        wandb.log({
+          f"valid/{lang}/{key}": value
+        })
 
   if print_result:
     logger.info("***** Evaluation result %s in %s *****" % (prefix, lang))

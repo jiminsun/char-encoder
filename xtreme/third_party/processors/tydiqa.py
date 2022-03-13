@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import jsonlines
 
+
 from transformers.file_utils import is_tf_available, is_torch_available
 # from transformers.tokenization_bert import whitespace_tokenize
 from transformers import DataProcessor
@@ -96,7 +97,7 @@ def _is_whitespace(c):
     return False
 
 
-def sqaud_convert_example_to_features(example, max_seq_length, doc_stride, max_query_length, is_training, lang2id):
+def squad_convert_example_to_features(example, max_seq_length, doc_stride, max_query_length, is_training, lang2id):
     features = []
     if is_training and not example.is_impossible:
         # Get start and end position
@@ -511,13 +512,10 @@ class SquadProcessor(DataProcessor):
 
         if self.train_file is None:
             raise ValueError("SquadProcessor should be instantiated via SquadV1Processor or SquadV2Processor")
-        input_data = []
         with open(
             os.path.join(data_dir, self.train_file if filename is None else filename), "r", encoding="utf-8"
         ) as reader:
-            for line in reader:
-                input_data.append(json.loads(line))
-            # input_data = json.load(reader)["data"]
+            input_data = json.load(reader)["data"]
         return self._create_examples(input_data, "train", language)
 
     def get_dev_examples(self, data_dir, filename=None, language='en'):

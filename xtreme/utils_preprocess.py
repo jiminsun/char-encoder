@@ -23,6 +23,7 @@ import random
 import os
 import shutil
 import json
+import enum
 
 
 TOKENIZERS = {
@@ -31,6 +32,16 @@ TOKENIZERS = {
   'xlmr': XLMRobertaTokenizer,
   'canine': CanineTokenizer,
 }
+
+
+class AnswerType(enum.IntEnum):
+  """Type of TyDi answer."""
+  UNKNOWN = 0
+  YES = 1
+  NO = 2
+  MINIMAL = 3
+  PASSAGE = 4
+
 
 def panx_tokenize_preprocess(args):
   def _preprocess_one_file(infile, outfile, idxfile, tokenizer, max_len):
@@ -420,6 +431,79 @@ def mlqa_preprocess(args):
   remove_qa_test_annotations(args.data_dir)
 
 
+def tydiqa_primary_preprocess(args):
+  LANG2ISO = {
+    'arabic': 'ar', 'bengali': 'bn', 'english': 'en',
+    'finnish': 'fi', 'indonesian': 'id', 'korean': 'ko',
+    'japanese': 'ja', 'russian': 'ru', 'swahili': 'sw',
+    'telugu': 'te', 'thai': 'th',
+  }
+  assert os.path.exists(args.data_dir)
+  train_file = os.path.join(args.data_dir, 'tydiqa-primary-train.json')
+  os.makedirs(args.output_dir, exist_ok=True)
+  version = 1.0
+
+  # Split the training file into language-specific files
+  def split_languages(fname):
+    lang2data = defaultdict(list)
+    with open(fname, 'r') as f_in:
+      data = json.load(f_in)
+      for doc in data['data']:
+        for par in doc['paragraphs']:
+          context = par['context']
+          for qa in par['qas']:
+            question = qa['question']
+            question_id = qa['id']
+            example_lang = question_id.split('-')[0]
+            q_id = question_id.split('-')[-1]
+
+            answer = qa['answers'][0]
+            a_start, a_text = answer['answer_start'], answer['text']
+            a_end = a_start + byte_len(a_text)
+            if answer['type'] != AnswerType.UNKNOWN:
+              assert byte_slice(context, a_start, a_end) == a_text
+
+            lang2data[example_lang].append({'paragraphs': [{
+              'context': context,
+              'qas': [{'answers': qa['answers'],
+                       'question': question,
+                       'id': q_id}]}]})
+    return lang2data
+  train_lang2data = split_languages(train_file)
+  for lang, data in train_lang2data.items():
+    out_file = os.path.join(
+        args.output_dir, 'tydiqa.primary.%s.train.json' % LANG2ISO[lang])
+    with open(out_file, 'w') as f:
+      json.dump({'data': data, 'version': version}, f)
+
+  # Rename the dev files
+  dev_file = os.path.join(args.data_dir, 'tydiqa-primary-dev.json')
+  dev_dir = os.path.join(args.data_dir, 'dev')
+  os.makedirs(dev_dir, exist_ok=True)
+  dev_lang2data = split_languages(dev_file)
+  for lang, data in dev_lang2data.items():
+    out_file = os.path.join(
+      args.output_dir, 'tydiqa.primary.%s.dev.json' % LANG2ISO[lang])
+    with open(out_file, 'w') as f:
+      json.dump({'data': data, 'version': version}, f)
+
+
+def byte_str(text):
+  return text.encode("utf-8")
+
+
+def byte_len(text):
+  # Python 3 encodes text as character sequences, not byte sequences
+  # (like Python 2).
+  return len(byte_str(text))
+
+
+def byte_slice(text, start, end, errors="replace"):
+  # Python 3 encodes text as character sequences, not byte sequences
+  # (like Python 2).
+  return byte_str(text)[start:end].decode("utf-8", errors=errors)
+
+
 def tydiqa_preprocess(args):
   LANG2ISO = {'arabic': 'ar', 'bengali': 'bn', 'english': 'en', 'finnish': 'fi',
               'indonesian': 'id', 'korean': 'ko', 'russian': 'ru',
@@ -546,3 +630,5 @@ if __name__ == "__main__":
     mlqa_preprocess(args)
   if args.task == 'tydiqa':
     tydiqa_preprocess(args)
+  if args.task == 'tydiqa-primary':
+    tydiqa_primary_preprocess(args)

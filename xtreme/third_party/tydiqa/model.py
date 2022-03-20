@@ -1,7 +1,7 @@
 # CanineForQuestionAnswering: https://huggingface.co/transformers/model_doc/canine.html#canineforquestionanswering
 # Canine for TyDiQA: https://github.com/google-research/language/blob/master/language/canine/tydiqa/tydi_modeling.py
 
-import data
+import tydiqa.data as data
 from transformers import CanineModel, CanineTokenizer, CanineForQuestionAnswering, Trainer, TrainingArguments
 from transformers import CaninePreTrainedModel
 import torch

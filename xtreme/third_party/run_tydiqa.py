@@ -47,11 +47,11 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from xtreme.third_party.tydiqa.model import CanineTyDiQAModel
-from xtreme.third_party.tydiqa.metrics import compute_pred_dict
-from xtreme.third_party.tydiqa.postproc import read_candidates_from_one_split
-from xtreme.third_party.tydiqa.char_splitter import CharacterSplitter
-from xtreme.third_party.tydiqa.processor import (
+from tydiqa.model import CanineTyDiQAModel
+from tydiqa.metrics import compute_pred_dict
+from tydiqa.postproc import read_candidates_from_one_split
+from tydiqa.char_splitter import CharacterSplitter
+from tydiqa.processor import (
     TyDiResult,
     TyDiProcessor,
     tydi_convert_examples_to_features

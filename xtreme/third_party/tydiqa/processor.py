@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Text, Tuple
 
 from transformers.file_utils import is_tf_available, is_torch_available
 from transformers import DataProcessor
-import data
-import preproc
-import char_splitter
+import tydiqa.data as data
+import tydiqa.preproc as preproc
+import tydiqa.char_splitter as char_splitter
 
 
 if is_torch_available():

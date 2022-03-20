@@ -23,7 +23,7 @@ import json
 import glob
 
 from absl import logging
-import data
+import tydiqa.data as data
 
 
 class ScoreSummary(object):

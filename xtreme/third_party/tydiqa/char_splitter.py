@@ -15,9 +15,9 @@
 """Character-level preprocessing for CANINE."""
 
 from typing import Dict, Optional, Text
-import special_codepoints
-import data
-import tydi_tokenization_interface
+import tydiqa.special_codepoints as special_codepoints
+import tydiqa.data as data
+import tydiqa.tydi_tokenization_interface as tydi_tokenization_interface
 
 
 # Padding is always index zero. This means that the NULL character is

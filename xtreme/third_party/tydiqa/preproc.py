@@ -30,8 +30,8 @@ import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Text, Tuple
 
 from absl import logging
-import data
-import tydi_tokenization_interface
+import tydiqa.data as data
+import tydiqa.tydi_tokenization_interface as tydi_tokenization_interface
 
 
 def create_entry_from_json(

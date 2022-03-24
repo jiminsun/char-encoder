@@ -650,6 +650,13 @@ def main():
   parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
   parser.add_argument("--server_ip", type=str, default="", help="For distant debugging.")
   parser.add_argument("--server_port", type=str, default="", help="For distant debugging.")
+
+  parser.add_argument(
+    "--freeze_embedding",
+    action="store_true",
+    help="Whether to freeze the embedding layer of CANINE"
+  )
+
   args = parser.parse_args()
   args.model_prefix = args.model_name_or_path.replace('/', '-')
 
@@ -759,6 +766,13 @@ def main():
         config=config,
         cache_dir=args.cache_dir if args.cache_dir else None,
       )
+
+    if args.model_type == "canine" and args.freeze_embedding:
+      for name, param in model.named_parameters():
+        if 'char_embeddings' in name:
+          logger.info(f"Freezing parameter {name} -- {param.size()}")
+          param.requires_grad = False
+
     model.to(args.device)
     train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)

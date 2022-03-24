@@ -505,6 +505,13 @@ def main():
             help="The languages in the training sets.")
   parser.add_argument("--log_file", type=str, default=None, help="log file")
   parser.add_argument("--eval_patience", type=int, default=-1, help="wait N times of decreasing dev score before early stop during training")
+
+  parser.add_argument(
+    "--freeze_embedding",
+    action="store_true",
+    help="Whether to freeze the embedding layer of CANINE"
+  )
+
   args = parser.parse_args()
   args.model_prefix = args.model_name_or_path.replace('/', '-')
 
@@ -582,6 +589,13 @@ def main():
                       from_tf=bool(".ckpt" in args.model_name_or_path),
                       config=config,
                       cache_dir=args.cache_dir if args.cache_dir else None)
+
+  if args.model_type == "canine" and args.freeze_embedding:
+    for name, param in model.named_parameters():
+      if 'char_embeddings' in name:
+        logger.info(f"Freezing parameter {name} -- {param.size()}")
+        param.requires_grad = False
+
   lang2id = config.lang2id if args.model_type == "xlm" else None
   logger.info("Using lang2id = {}".format(lang2id))
 

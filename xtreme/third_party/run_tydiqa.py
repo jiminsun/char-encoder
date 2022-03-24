@@ -47,7 +47,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from tydiqa.model import CanineTyDiQAModel
+from tydiqa.model import CanineTyDiQAModel, BertTyDiQAModel
 from tydiqa.metrics import compute_pred_dict
 from tydiqa.postproc import read_candidates_from_one_split
 from tydiqa.char_splitter import CharacterSplitter
@@ -716,6 +716,12 @@ def main():
     parser.add_argument("--train_lang", type=str, default="en", help="The language of the training data")
     parser.add_argument("--eval_lang", type=str, default="en", help="The language of the test data")
 
+    parser.add_argument(
+        "--freeze_embedding",
+        action="store_true",
+        help="Whether to freeze the embedding layer of CANINE"
+    )
+
     args = parser.parse_args()
     args.model_prefix = args.model_name_or_path.replace('/', '-')
 
@@ -795,12 +801,27 @@ def main():
             cache_dir=args.cache_dir if args.cache_dir else None,
         )
 
-    model = CanineTyDiQAModel.from_pretrained(
-        args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+    # Load model
+    if args.model_type == 'canine':
+        model = CanineTyDiQAModel.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+        )
+    elif args.model_type == 'bert':
+        model = BertTyDiQAModel.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+        )
+
+    if args.freeze_embedding:
+        for name, param in model.named_parameters():
+            if 'char_embeddings' in name:
+                logger.info(f"Freezing parameter {name} -- {param.size()}")
+                param.requires_grad = False
 
     lang2id = config.lang2id if args.model_type == "xlm" else None
     logger.info("lang2id = {}".format(lang2id))
@@ -849,7 +870,10 @@ def main():
         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
         # Load a trained model and vocabulary that you have fine-tuned
-        model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+        if args.model_type == 'canine':
+            model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+        elif args.model_type == 'bert':
+            model = BertTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
 
         if args.model_type == 'canine':
             tokenizer = CharacterSplitter()

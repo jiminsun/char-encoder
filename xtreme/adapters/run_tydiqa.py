@@ -716,9 +716,10 @@ def main():
     parser.add_argument("--eval_lang", type=str, default="en", help="The language of the test data")
 
     parser.add_argument(
-        "--freeze_embedding",
-        action="store_true",
-        help="Whether to freeze the embedding layer of CANINE"
+        "--adapter",
+        type=str,
+        default="attention",
+        choices=["attention", "feedforward"]
     )
 
     args = parser.parse_args()

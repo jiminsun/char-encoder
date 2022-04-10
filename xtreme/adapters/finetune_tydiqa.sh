@@ -22,6 +22,7 @@ GPU=${3:-0}
 DATA_DIR=${4:-"$REPO/download/"}
 OUT_DIR=${5:-"$REPO/outputs/"}
 
+ADAPTER=attention
 TASK=tydiqa
 
 BATCH_SIZE=4
@@ -68,7 +69,7 @@ fi
 
 
 # Model path where trained model should be stored
-MODEL_PATH=$OUT_DIR/${TASK}/${LANG}_${MODEL}_LR${LR}_EPOCH${NUM_EPOCHS}_maxlen${MAXL}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}
+MODEL_PATH=$OUT_DIR/${TASK}/adapter_${ADAPTER}_${LANG}_${MODEL}_LR${LR}_EPOCH${NUM_EPOCHS}_maxlen${MAXL}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}
 mkdir -p $MODEL_PATH
 
 # Train on TyDiQa-GoldP $LANG train file
@@ -78,7 +79,7 @@ PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.${LANG}.dev.json
 # tydiqa.en.train.json
 
 # train
-CUDA_VISIBLE_DEVICES=$GPU python ./run_squad.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./run_tydiqa.py \
   --model_type ${MODEL_TYPE} \
   --model_name_or_path ${MODEL} \
   --do_train \
@@ -101,7 +102,7 @@ CUDA_VISIBLE_DEVICES=$GPU python ./run_squad.py \
   --weight_decay 0.0001 \
   --threads 8 \
   --train_lang ${LANG} \
-  --eval_lang ${LANG}
+  --eval_lang ${LANG} --adapter $ADAPTER
 
 # predict
-bash ./predict_qa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR
+bash ./predict_tydiqa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR

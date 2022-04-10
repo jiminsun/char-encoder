@@ -1,4 +1,4 @@
-# coding=utf-8
+
 # Copyright 2018 The Google AI Language Team Authors,
 # The HuggingFace Inc. team, and The XTREME Benchmark Authors.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -432,12 +432,16 @@ def load_and_cache_examples(
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
+    if 'canine' in args.model_name_or_path:
+        model_config = re.findall("canine-[s|c]", args.model_name_or_path)[0]
+    elif 'bert' in args.model_name_or_path:
+        model_config = 'mbert'
     cached_features_file = os.path.join(
         input_dir,
         "cached_{}_{}_{}".format(
             os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
             # list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            re.findall("canine-[s|c]", args.model_name_or_path)[0],
+            model_config, 
             str(args.max_seq_length),
         ),
     )

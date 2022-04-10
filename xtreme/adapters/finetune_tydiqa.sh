@@ -79,7 +79,7 @@ PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.${LANG}.dev.json
 # tydiqa.en.train.json
 
 # train
-CUDA_VISIBLE_DEVICES=$GPU python ./run_tydiqa.py \
+CUDA_VISIBLE_DEVICES=$GPU python $REPO/xtreme/adapters/run_tydiqa.py \
   --model_type ${MODEL_TYPE} \
   --model_name_or_path ${MODEL} \
   --do_train \

@@ -8,16 +8,15 @@ import typing
 import collections
 import random
 
-import numpy as np
 from tqdm import tqdm
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Text, Tuple
 
 from transformers.file_utils import is_tf_available, is_torch_available
 from transformers import DataProcessor
-from processors.tydi_data import Answer, AnswerType, byte_len
-import processors.tydi_data as data
-import processors.tydi_preproc as preproc
-import processors.tydi_char_splitter as tydi_char_splitter
+import tydiqa.data as data
+import tydiqa.preproc as preproc
+import tydiqa.char_splitter as char_splitter
+
 
 if is_torch_available():
     import torch
@@ -146,13 +145,13 @@ def tydi_convert_example_to_features(
             assert i < len(tydi_example.context_to_plaintext_offset), (
                 "Expected {} to be in `context_to_plaintext_offset` "
                 "byte_len(contexts)={}".format(i,
-                                               byte_len(tydi_example.contexts)))
+                                               data.byte_len(tydi_example.contexts)))
     for i in contexts_end_offsets:
         if i > 0:
             assert i < len(tydi_example.context_to_plaintext_offset), (
                 "Expected {} to be in `context_to_plaintext_offset` "
                 "byte_len(contexts)={}".format(i,
-                                               byte_len(tydi_example.contexts)))
+                                               data.byte_len(tydi_example.contexts)))
 
     # The offsets `contexts_start_offsets` and `contexts_end_offsets` are
     # initially in terms of `tydi_example.contexts`, but we need them with regard
@@ -315,7 +314,7 @@ def tydi_convert_example_to_features(
             contains_an_annotation = (
                     wp_start_position >= doc_start and wp_end_position <= doc_end)
             if ((not contains_an_annotation) or
-                    tydi_example.answer.type == AnswerType.UNKNOWN):
+                    tydi_example.answer.type == data.AnswerType.UNKNOWN):
                 # If an example has unknown answer type or does not contain the answer
                 # span, then we only include it with probability --include_unknowns.
                 # When we include an example with unknown answer type, we set the first
@@ -324,7 +323,7 @@ def tydi_convert_example_to_features(
                     continue
                 start_position = 0
                 end_position = 0
-                answer_type = AnswerType.UNKNOWN
+                answer_type = data.AnswerType.UNKNOWN
             else:
                 doc_offset = len(question_wordpieces) + 2  # one for CLS, one for SEP.
 
@@ -608,7 +607,7 @@ class TyDiProcessor(DataProcessor):
         ) as reader:
             input_data = [json.loads(line) for line in reader]
 
-        splitter = tydi_char_splitter.CharacterSplitter()
+        splitter = char_splitter.CharacterSplitter()
         entries = [preproc.create_entry_from_json(json_elem,
                                                   splitter,
                                                   max_passages=max_passages,
@@ -641,7 +640,7 @@ class TyDiProcessor(DataProcessor):
         ) as reader:
             input_data = [json.loads(line) for line in reader]
 
-        splitter = tydi_char_splitter.CharacterSplitter()
+        splitter = char_splitter.CharacterSplitter()
         entries = [preproc.create_entry_from_json(json_elem,
                                                   splitter,
                                                   max_passages=max_passages,
@@ -659,7 +658,7 @@ class TyDiProcessor(DataProcessor):
             if is_training:
                 answer = data.make_tydi_answer(entry["contexts"], entry["answer"])
                 start_byte_offset = answer.offset
-                end_byte_offset = answer.offset + byte_len(answer.text)
+                end_byte_offset = answer.offset + data.byte_len(answer.text)
 
             else:
                 answer = None
@@ -705,7 +704,7 @@ class TyDiExample(object):
             contexts: Text,
             plaintext: Text,
             context_to_plaintext_offset: Sequence[int],
-            answer: Optional[Answer] = None,
+            answer: Optional[data.Answer] = None,
             start_byte_offset: Optional[int] = None,
             end_byte_offset: Optional[int] = None):
         self.example_id = example_id
@@ -733,7 +732,7 @@ class TyDiExample(object):
             self.answer = answer
             self.start_byte_offset = start_byte_offset
             self.end_byte_offset = end_byte_offset
-            self.is_impossible = self.answer.type == AnswerType.UNKNOWN
+            self.is_impossible = self.answer.type == data.AnswerType.UNKNOWN
         else:
             self.answer = None
             self.start_byte_offset = None

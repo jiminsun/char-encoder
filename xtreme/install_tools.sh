@@ -36,6 +36,9 @@ pip install seqeval
 pip install tensorboardx
 pip install networkx==1.11
 
+# install absl for tydiqa specific code
+pip install absl-py
+
 # install XLM tokenizer
 pip install sacremoses
 pip install pythainlp

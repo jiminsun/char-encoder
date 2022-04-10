@@ -1,4 +1,4 @@
-
+# coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors,
 # The HuggingFace Inc. team, and The XTREME Benchmark Authors.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -47,17 +47,16 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from tydiqa.model import CanineTyDiQAModel, BertTyDiQAModel
-from tydiqa.metrics import compute_pred_dict
-from tydiqa.postproc import read_candidates_from_one_split
-from tydiqa.char_splitter import CharacterSplitter
-from tydiqa.processor import (
+from model import CanineAdapterTyDiQAModel
+from xtreme.third_party.tydiqa.metrics import compute_pred_dict
+from xtreme.third_party.tydiqa.postproc import read_candidates_from_one_split
+from xtreme.third_party.tydiqa.char_splitter import CharacterSplitter
+from xtreme.third_party.tydiqa.processor import (
     TyDiResult,
     TyDiProcessor,
     tydi_convert_examples_to_features
 )
 
-# from xlm_roberta import XLMRobertaForQuestionAnswering, XLMRobertaConfig
 
 
 try:
@@ -432,16 +431,12 @@ def load_and_cache_examples(
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
-    if 'canine' in args.model_name_or_path:
-        model_config = re.findall("canine-[s|c]", args.model_name_or_path)[0]
-    elif 'bert' in args.model_name_or_path:
-        model_config = 'mbert'
     cached_features_file = os.path.join(
         input_dir,
         "cached_{}_{}_{}".format(
             os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
             # list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            model_config, 
+            re.findall("canine-[s|c]", args.model_name_or_path)[0],
             str(args.max_seq_length),
         ),
     )
@@ -807,25 +802,23 @@ def main():
 
     # Load model
     if args.model_type == 'canine':
-        model = CanineTyDiQAModel.from_pretrained(
+        model = CanineAdapterTyDiQAModel.from_pretrained(
             args.model_name_or_path,
             from_tf=bool(".ckpt" in args.model_name_or_path),
             config=config,
             cache_dir=args.cache_dir if args.cache_dir else None,
         )
-    elif args.model_type == 'bert':
-        model = BertTyDiQAModel.from_pretrained(
-            args.model_name_or_path,
-            from_tf=bool(".ckpt" in args.model_name_or_path),
-            config=config,
-            cache_dir=args.cache_dir if args.cache_dir else None,
-        )
+    else:
+        raise NotImplementedError("Other model types are not supported yet")
 
-    if args.freeze_embedding:
-        for name, param in model.named_parameters():
-            if 'char_embeddings' in name:
-                logger.info(f"Freezing parameter {name} -- {param.size()}")
-                param.requires_grad = False
+    # freeze params that are not in the adapter module
+    for name, param in model.named_parameters():
+        if 'adapter' not in name:
+            logger.info(f"Freezing parameter {name} -- {param.size()}")
+            param.requires_grad = False
+        else:
+            logger.info(f"Training parameter {name} -- {param.size()}")
+
 
     lang2id = config.lang2id if args.model_type == "xlm" else None
     logger.info("lang2id = {}".format(lang2id))
@@ -875,9 +868,9 @@ def main():
 
         # Load a trained model and vocabulary that you have fine-tuned
         if args.model_type == 'canine':
-            model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
-        elif args.model_type == 'bert':
-            model = BertTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+            model = CanineAdapterTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+        else:
+            raise NotImplementedError("Other model types are not supported yet")
 
         if args.model_type == 'canine':
             tokenizer = CharacterSplitter()
@@ -910,7 +903,7 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = '_' + checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = CanineTyDiQAModel.from_pretrained(checkpoint, force_download=True)
+            model = CanineAdapterTyDiQAModel.from_pretrained(checkpoint, force_download=True)
             model.to(args.device)
 
             # Evaluate

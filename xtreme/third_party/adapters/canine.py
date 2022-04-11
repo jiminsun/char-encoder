@@ -1,9 +1,21 @@
+# CanineForQuestionAnswering: https://huggingface.co/transformers/model_doc/canine.html#canineforquestionanswering
+# Canine for TyDiQA: https://github.com/google-research/language/blob/master/language/canine/tydiqa/tydi_modeling.py
+
+import sys
+sys.path.insert(0, '..')
+
 import tydiqa.data as data
-from transformers import CanineModel, CaninePreTrainedModel
-import copy
+from transformers import CanineModel, BertModel
+from transformers import CaninePreTrainedModel, BertPreTrainedModel
 import torch
 import torch.nn as nn
-from xtreme.third_party.tydiqa.model import TyDiQAModelOutput
+from torch.nn import CrossEntropyLoss
+from transformers.modeling_outputs import ModelOutput
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+
+import copy
 from transformers.models.canine.modeling_canine import (
     CanineEmbeddings,
     CanineAttention,
@@ -18,25 +30,8 @@ from transformers.models.canine.modeling_canine import (
 )
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.modeling_utils import apply_chunking_to_forward
+from adapter import Adapter
 
-
-class Adapter(nn.Module):
-    def __init__(
-            self,
-            hidden_size,
-            bottleneck_size,
-    ):
-        super().__init__()
-        self.down_projection = nn.Linear(hidden_size, bottleneck_size)
-        self.activation = nn.ReLU()
-        self.up_projection = nn.Linear(bottleneck_size, hidden_size)
-        self.layer_norm = nn.LayerNorm(hidden_size)
-
-    def forward(self, input):
-        h = self.down_projection(input)     # [B x L x H] -> [B x L x R]
-        h = self.activation(h)
-        h = self.up_projection(h)           # [B x L x R] -> [B x L x H]
-        return h
 
 
 class CanineLayerWithAdapter(nn.Module):
@@ -139,7 +134,7 @@ class CanineEncoderWithAdapter(CanineEncoder):
         attend_to_chunk_width=128,
         attend_to_chunk_stride=128,
     ):
-        super().__init__()
+        super().__init__(config)
         self.config = config
         self.layer = nn.ModuleList(
             [
@@ -208,7 +203,7 @@ class CanineEncoderWithAdapter(CanineEncoder):
             attentions=all_self_attentions,
         )
 
-
+    
 class CanineAdapterModel(CaninePreTrainedModel):
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
@@ -240,6 +235,3 @@ class CanineAdapterModel(CaninePreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
-
-
-

@@ -1,16 +1,3 @@
-# CanineForQuestionAnswering: https://huggingface.co/transformers/model_doc/canine.html#canineforquestionanswering
-# Canine for TyDiQA: https://github.com/google-research/language/blob/master/language/canine/tydiqa/tydi_modeling.py
-
-import xtreme.third_party.tydiqa.data as data
-from transformers import CanineModel, BertModel
-from transformers import CaninePreTrainedModel, BertPreTrainedModel
-import torch
-import torch.nn as nn
-from torch.nn import CrossEntropyLoss
-from transformers.modeling_outputs import ModelOutput
-from dataclasses import dataclass
-from typing import Optional, Tuple
-from adapter import CanineAdapterModel
 
 
 

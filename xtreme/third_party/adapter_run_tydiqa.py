@@ -47,7 +47,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from model import CanineAdapterTyDiQAModel
+from adapters.model import CanineAdapterTyDiQAModel
 from xtreme.third_party.tydiqa.metrics import compute_pred_dict
 from xtreme.third_party.tydiqa.postproc import read_candidates_from_one_split
 from xtreme.third_party.tydiqa.char_splitter import CharacterSplitter

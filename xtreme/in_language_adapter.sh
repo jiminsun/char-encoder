@@ -23,6 +23,6 @@ MODELS=( "google/canine-s" "google/canine-c" )
 for LANG in "${LANGS[@]}"; do
   echo "Fine-tuning $MODEL on $TASK using GPU $GPU"
   echo "Load data from $DATA_DIR, and save models to $OUT_DIR"
-  bash $PWD/xtreme/adapters/finetune_${TASK}.sh $MODEL $LANG $GPU $DATA_DIR $OUT_DIR
+  bash $PWD/adapter_scripts/finetune_${TASK}.sh $MODEL $LANG $GPU $DATA_DIR $OUT_DIR
 done
 # done

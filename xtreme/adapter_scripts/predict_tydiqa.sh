@@ -80,7 +80,7 @@ elif [ $TGT == 'tydiqa' ]; then
 TEST_FILE=${DIR}/tydiqa-goldp-v1.1-dev/tydiqa.$lang.dev.json
 fi
 
-CUDA_VISIBLE_DEVICES=${GPU} python ./run_tydiqa.py \
+CUDA_VISIBLE_DEVICES=${GPU} python $REPO/third_party/adapter_run_squad.py \
 --model_type ${MODEL_TYPE} \
 --model_name_or_path ${MODEL_PATH} \
 --do_eval \

@@ -79,8 +79,9 @@ PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.${LANG}.dev.json
 # tydiqa.en.train.json
 
 # train
-CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/adapter_run_tydiqa.py \
+CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/adapter_run_squad.py \
   --model_type ${MODEL_TYPE} \
+  --task_name ${TASK} \
   --model_name_or_path ${MODEL} \
   --do_train \
   --do_eval \
@@ -105,4 +106,4 @@ CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/adapter_run_tydiqa.py \
   --eval_lang ${LANG} --adapter $ADAPTER
 
 # predict
-bash $REPO/third_party/adapter_predict_tydiqa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR
+bash $REPO/adapter_scripts/adapter_predict_tydiqa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR

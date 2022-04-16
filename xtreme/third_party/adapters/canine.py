@@ -3,6 +3,7 @@
 
 import copy
 from transformers import (
+    CanineModel,
     CaninePreTrainedModel,
     CanineForQuestionAnswering,
     CanineForSequenceClassification,
@@ -25,9 +26,27 @@ from transformers.models.canine.modeling_canine import (
 )
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.modeling_utils import apply_chunking_to_forward
-from adapter import Adapter
-from canine import CanineAdapterModel
-from tydiqa_utils import TyDiQAModelOutput
+
+from .tydiqa_utils import TyDiQAModelOutput
+
+
+class Adapter(nn.Module):
+    def __init__(
+            self,
+            hidden_size,
+            bottleneck_size,
+    ):
+        super().__init__()
+        self.down_projection = nn.Linear(hidden_size, bottleneck_size)
+        self.activation = nn.ReLU(inplace=False)
+        self.up_projection = nn.Linear(bottleneck_size, hidden_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+
+    def forward(self, input):
+        h = self.down_projection(input)     # [B x L x H] -> [B x L x R]
+        h = self.activation(h)
+        h = self.up_projection(h)           # [B x L x R] -> [B x L x H]
+        return h
 
 
 class CanineLayerWithAdapter(nn.Module):
@@ -47,6 +66,8 @@ class CanineLayerWithAdapter(nn.Module):
         attend_from_chunk_stride,
         attend_to_chunk_width,
         attend_to_chunk_stride,
+        adapter,
+        bottleneck_size,
     ):
         super().__init__()
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
@@ -62,10 +83,10 @@ class CanineLayerWithAdapter(nn.Module):
             attend_to_chunk_stride,
         )
 
-        self.adapter_loc = config.adapter
+        self.adapter_loc = adapter
         self.adapter = Adapter(
             hidden_size=config.hidden_size,
-            bottleneck_size=config.bottleneck_size,
+            bottleneck_size=bottleneck_size,
         )
 
         self.intermediate = CanineIntermediate(config)
@@ -89,10 +110,10 @@ class CanineLayerWithAdapter(nn.Module):
         if self.adapter_loc == 'attention':
             # sequential adapter
             adapter_output = self.adapter(attention_output)
-            attention_output += adapter_output
+            attention_output = attention_output + adapter_output
         elif self.adapter_loc == 'parallel_attention':
             adapter_output = self.adapter(hidden_states)
-            attention_output += adapter_output
+            attention_output = attention_output + adapter_output
 
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
@@ -103,10 +124,10 @@ class CanineLayerWithAdapter(nn.Module):
         if self.adapter_loc == 'feedforward':
             # sequential adapter
             adapter_output = self.adapter(layer_output)
-            layer_output += adapter_output
+            layer_output = layer_output + adapter_output
         elif self.adapter_loc == 'parallel_feedforward':
             adapter_output = self.adapter(attention_output)
-            layer_output += adapter_output
+            layer_output = layer_output + adapter_output
 
         outputs = (layer_output,) + outputs
 
@@ -129,12 +150,14 @@ class CanineEncoderWithAdapter(CanineEncoder):
         attend_from_chunk_stride=128,
         attend_to_chunk_width=128,
         attend_to_chunk_stride=128,
+        adapter='attention',
+        bottleneck_size=512,
     ):
         super().__init__(config)
         self.config = config
         self.layer = nn.ModuleList(
             [
-                CanineLayer(
+                CanineLayerWithAdapter(
                     config,
                     local,
                     always_attend_to_first_position,
@@ -143,6 +166,8 @@ class CanineEncoderWithAdapter(CanineEncoder):
                     attend_from_chunk_stride,
                     attend_to_chunk_width,
                     attend_to_chunk_stride,
+                    adapter,
+                    bottleneck_size,
                 )
                 for _ in range(config.num_hidden_layers)
             ]
@@ -200,8 +225,8 @@ class CanineEncoderWithAdapter(CanineEncoder):
         )
 
     
-class CanineAdapterModel(CaninePreTrainedModel):
-    def __init__(self, config, add_pooling_layer=True):
+class CanineAdapterModel(CanineModel):
+    def __init__(self, config, adapter, bottleneck_size, add_pooling_layer=True):
         super().__init__(config)
         shallow_config = copy.deepcopy(config)
         shallow_config.num_hidden_layers = 1
@@ -218,6 +243,8 @@ class CanineAdapterModel(CaninePreTrainedModel):
             attend_from_chunk_stride=config.local_transformer_stride,
             attend_to_chunk_width=config.local_transformer_stride,
             attend_to_chunk_stride=config.local_transformer_stride,
+            adapter=adapter,
+            bottleneck_size=bottleneck_size,
         )
 
         self.chars_to_molecules = CharactersToMolecules(config)
@@ -234,22 +261,22 @@ class CanineAdapterModel(CaninePreTrainedModel):
 
 
 class CanineAdapterForQuestionAnswering(CanineForQuestionAnswering):
-    def __init__(self, config):
+    def __init__(self, config, adapter, bottleneck_size):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.canine = CanineAdapterModel(config)
+        self.canine = CanineAdapterModel(config, adapter, bottleneck_size)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
 
 
 class CanineAdapterForSequenceClassification(CanineForSequenceClassification):
-    def __init__(self, config):
+    def __init__(self, config, adapter, bottleneck_size):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.canine = CanineAdapterModel(config)
+        self.canine = CanineAdapterModel(config, adapter, bottleneck_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
@@ -257,11 +284,11 @@ class CanineAdapterForSequenceClassification(CanineForSequenceClassification):
 
 
 class CanineAdapterForTokenClassification(CanineForTokenClassification):
-    def __init__(self, config):
+    def __init__(self, config, adapter, bottleneck_size):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.canine = CanineAdapterModel(config)
+        self.canine = CanineAdapterModel(config, adapter, bottleneck_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
@@ -269,10 +296,14 @@ class CanineAdapterForTokenClassification(CanineForTokenClassification):
 
 
 class CanineAdapterTyDiQAModel(CaninePreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config, *args, **kwargs):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.canine = CanineAdapterModel(config)
+        self.canine = CanineAdapterModel(
+            config,
+            kwargs['adapter'],
+            kwargs['bottleneck_size']
+        )
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
         self.answer_type_output_weights = nn.Linear(config.hidden_size, 5, bias=True)
         self.init_weights()

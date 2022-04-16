@@ -23,6 +23,7 @@ GPU=${4:-0}
 DATA_DIR=${5:-"$REPO/download/"}
 OUT_DIR=${6:-"$REPO/outputs/"}
 
+
 ADAPTER=attention
 TASK=tydiqa
 
@@ -104,7 +105,7 @@ CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/adapter_run_squad.py \
   --weight_decay 0.0001 \
   --threads 8 \
   --train_lang ${LANG} \
-  --eval_lang ${LANG} --adapter $ADAPTER
+  --eval_lang ${LANG} --adapter $ADAPTER --unfreeze_transformer
 
 # predict
-bash $REPO/adapter_scripts/adapter_predict_tydiqa.sh $MODEL $MODEL_PATH $TASK $GPU $DATA_DIR
+bash $REPO/adapter_scripts/predict_tydiqa.sh $MODEL $MODEL_PATH $TASK $LANG $GPU $DATA_DIR

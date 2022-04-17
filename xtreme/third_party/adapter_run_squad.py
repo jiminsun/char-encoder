@@ -32,10 +32,10 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
+from torch.optim import AdamW
 
 from transformers import (
     WEIGHTS_NAME,
-    AdamW,
     AlbertConfig,
     AlbertForQuestionAnswering,
     AlbertTokenizer,
@@ -207,7 +207,7 @@ def train(args, train_dataset, model, tokenizer):
     )
     # Added here for reproductibility
     set_seed(args)
-
+    epoch_count = 1
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
@@ -300,6 +300,24 @@ def train(args, train_dataset, model, tokenizer):
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
+
+        # save ckpt after every epoch
+        output_dir = os.path.join(args.output_dir, "checkpoint-epoch_{}".format(epoch_count))
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        # Take care of distributed/parallel training
+        model_to_save = model.module if hasattr(model, "module") else model
+        model_to_save.save_pretrained(output_dir)
+        # tokenizer.save_pretrained(output_dir)
+
+        torch.save(args, os.path.join(output_dir, "training_args.bin"))
+        logger.info("Saving model checkpoint to %s", output_dir)
+
+        torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+        torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+        logger.info("Saving optimizer and scheduler states to %s", output_dir)
+        epoch_count += 1
+
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
@@ -712,6 +730,18 @@ def main():
         choices=["attention", "feedforward"]
     )
 
+    parser.add_argument(
+        "--bottleneck_size",
+        type=int,
+        default=512,
+        choices=[32, 64, 128, 256, 512]
+    )
+
+    parser.add_argument(
+        "--unfreeze_transformer",
+        action="store_true",
+    )
+
     args = parser.parse_args()
     args.model_prefix = args.model_name_or_path.replace('/', '-')
 
@@ -791,17 +821,31 @@ def main():
     model = model_class.from_pretrained(
         args.model_name_or_path,
         from_tf=bool(".ckpt" in args.model_name_or_path),
+        adapter=args.adapter,
+        bottleneck_size=args.bottleneck_size,
         config=config,
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
 
-    for name, param in model.named_parameters():
-        if 'adapter' not in name:
-            logger.info(f"Freezing parameter {name} -- {param.size()}")
-            param.requires_grad = False
-        else:
-            logger.info(f"Training parameter {name} -- {param.size()}")
-
+    if args.unfreeze_transformer:
+        for name, param in model.named_parameters():
+            if 'adapter' in name:
+                logger.info(f"Training parameter {name} -- {param.size()}")
+            elif 'initial_char_encoder' in name:
+                logger.info(f"Freezing parameter {name} -- {param.size()}")
+                param.requires_grad = False
+            elif 'char_embeddings' in name:
+                logger.info(f"Freezing parameter {name} -- {param.size()}")
+                param.requires_grad = False
+            else:
+                pass
+    else:
+        for name, param in model.named_parameters():
+            if 'adapter' not in name:
+                logger.info(f"Freezing parameter {name} -- {param.size()}")
+                param.requires_grad = False
+            else:
+                logger.info(f"Training parameter {name} -- {param.size()}")
 
     lang2id = config.lang2id if args.model_type == "xlm" else None
     logger.info("lang2id = {}".format(lang2id))
@@ -850,7 +894,12 @@ def main():
         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
         # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir, force_download=True)
+        model = model_class.from_pretrained(
+            args.output_dir,
+            force_download=True,
+            adapter=args.adapter,
+            bottleneck_size=args.bottleneck_size
+        )
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         model.to(args.device)
 
@@ -875,7 +924,9 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = model_class.from_pretrained(checkpoint, force_download=True)
+            model = model_class.from_pretrained(checkpoint, force_download=True,
+                                                adapter=args.adapter,
+                                                bottleneck_size=args.bottleneck_size)
             model.to(args.device)
 
             # Evaluate
@@ -890,4 +941,5 @@ def main():
 
 
 if __name__ == "__main__":
+    torch.autograd.set_detect_anomaly(True)
     main()

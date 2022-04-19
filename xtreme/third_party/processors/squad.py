@@ -10,6 +10,7 @@ from tqdm import tqdm
 from transformers.file_utils import is_tf_available, is_torch_available
 # from transformers.tokenization_bert import whitespace_tokenize
 from transformers import DataProcessor
+from transformers import CanineTokenizer
 
 
 def whitespace_tokenize(text):
@@ -103,36 +104,61 @@ def squad_convert_example_to_features(example, max_seq_length, doc_stride, max_q
         end_position = example.end_position
 
         # If the answer cannot be found in the text, then skip this example.
-        actual_text = " ".join(example.doc_tokens[start_position : (end_position + 1)])
-        cleaned_answer_text = " ".join(whitespace_tokenize(example.answer_text))
-        if actual_text.find(cleaned_answer_text) == -1:
-            logger.warning("Could not find answer: '%s' vs. '%s'", actual_text, cleaned_answer_text)
-            return []
-
-    tok_to_orig_index = []
-    orig_to_tok_index = []
-    all_doc_tokens = []
-    for (i, token) in enumerate(example.doc_tokens):
-        orig_to_tok_index.append(len(all_doc_tokens))
-        if lang2id is None:
-            sub_tokens = tokenizer.tokenize(token)
+        if isinstance(tokenizer, CanineTokenizer):
+            actual_text = "".join(example.doc_tokens[start_position : (end_position + 1)])
+            answer_text = example.answer_text
+            if actual_text.find(answer_text) == -1:
+                logger.warning("Could not find answer: '%s' vs. '%s'", actual_text, answer_text)
+                return []
         else:
-            sub_tokens = tokenizer.tokenize(token, lang=example.language)
-        for sub_token in sub_tokens:
+            actual_text = " ".join(example.doc_tokens[start_position : (end_position + 1)])
+            cleaned_answer_text = " ".join(whitespace_tokenize(example.answer_text))
+            if actual_text.find(cleaned_answer_text) == -1:
+                logger.warning("Could not find answer: '%s' vs. '%s'", actual_text, cleaned_answer_text)
+                return []
+
+    if isinstance(tokenizer, CanineTokenizer):
+        char_doc_tokens = example.doc_tokens
+        tok_to_orig_index = []
+        orig_to_tok_index = []
+        all_doc_tokens = []
+
+        for (i, token) in enumerate(char_doc_tokens):
+            orig_to_tok_index.append(len(all_doc_tokens))
             tok_to_orig_index.append(i)
-            all_doc_tokens.append(sub_token)
+            all_doc_tokens.append(token)
 
-    if is_training and not example.is_impossible:
-        tok_start_position = orig_to_tok_index[example.start_position]
-        if example.end_position < len(example.doc_tokens) - 1:
-            tok_end_position = orig_to_tok_index[example.end_position + 1] - 1
-        else:
-            tok_end_position = len(all_doc_tokens) - 1
+        if is_training and not example.is_impossible:
+            tok_start_position = orig_to_tok_index[example.start_position]
+            if example.end_position < len(example.doc_tokens) - 1:
+                tok_end_position = orig_to_tok_index[example.end_position + 1] - 1
+            else:
+                tok_end_position = len(all_doc_tokens) - 1
 
-        (tok_start_position, tok_end_position) = _improve_answer_span(
-            all_doc_tokens, tok_start_position, tok_end_position, tokenizer, example.answer_text,
-            lang=example.language, lang2id=lang2id
-        )
+    else:
+        tok_to_orig_index = []
+        orig_to_tok_index = []
+        all_doc_tokens = []
+
+        for (i, token) in enumerate(example.doc_tokens):
+            orig_to_tok_index.append(len(all_doc_tokens))
+            sub_tokens = tokenizer.tokenize(token)
+            # sub_tokens = tokenizer.tokenize(token, lang=example.language)
+            for sub_token in sub_tokens:
+                tok_to_orig_index.append(i)
+                all_doc_tokens.append(sub_token)
+
+        if is_training and not example.is_impossible:
+            tok_start_position = orig_to_tok_index[example.start_position]
+            if example.end_position < len(example.doc_tokens) - 1:
+                tok_end_position = orig_to_tok_index[example.end_position + 1] - 1
+            else:
+                tok_end_position = len(all_doc_tokens) - 1
+
+            (tok_start_position, tok_end_position) = _improve_answer_span(
+                all_doc_tokens, tok_start_position, tok_end_position, tokenizer, example.answer_text,
+                lang=example.language, lang2id=lang2id
+            )
 
     spans = []
 
@@ -440,62 +466,7 @@ class SquadProcessor(DataProcessor):
     train_file = None
     dev_file = None
 
-    def _get_example_from_tensor_dict(self, tensor_dict, evaluate=False):
-        if not evaluate:
-            answer = tensor_dict["answers"]["text"][0].numpy().decode("utf-8")
-            answer_start = tensor_dict["answers"]["answer_start"][0].numpy()
-            answers = []
-        else:
-            answers = [
-                {"answer_start": start.numpy(), "text": text.numpy().decode("utf-8")}
-                for start, text in zip(tensor_dict["answers"]["answer_start"], tensor_dict["answers"]["text"])
-            ]
-
-            answer = None
-            answer_start = None
-
-        return SquadExample(
-            qas_id=tensor_dict["id"].numpy().decode("utf-8"),
-            question_text=tensor_dict["question"].numpy().decode("utf-8"),
-            context_text=tensor_dict["context"].numpy().decode("utf-8"),
-            answer_text=answer,
-            start_position_character=answer_start,
-            title=tensor_dict["title"].numpy().decode("utf-8"),
-            answers=answers,
-        )
-
-    def get_examples_from_dataset(self, dataset, evaluate=False):
-        """
-        Creates a list of :class:`~transformers.data.processors.squad.SquadExample` using a TFDS dataset.
-
-        Args:
-            dataset: The tfds dataset loaded from `tensorflow_datasets.load("squad")`
-            evaluate: boolean specifying if in evaluation mode or in training mode
-
-        Returns:
-            List of SquadExample
-
-        Examples::
-
-            import tensorflow_datasets as tfds
-            dataset = tfds.load("squad")
-
-            training_examples = get_examples_from_dataset(dataset, evaluate=False)
-            evaluation_examples = get_examples_from_dataset(dataset, evaluate=True)
-        """
-
-        if evaluate:
-            dataset = dataset["validation"]
-        else:
-            dataset = dataset["train"]
-
-        examples = []
-        for tensor_dict in tqdm(dataset):
-            examples.append(self._get_example_from_tensor_dict(tensor_dict, evaluate=evaluate))
-
-        return examples
-
-    def get_train_examples(self, data_dir, filename=None, language='en'):
+    def get_train_examples(self, data_dir, tokenizer, filename=None, language='en'):
         """
         Returns the training examples from the data directory.
 
@@ -515,9 +486,9 @@ class SquadProcessor(DataProcessor):
             os.path.join(data_dir, self.train_file if filename is None else filename), "r", encoding="utf-8"
         ) as reader:
             input_data = json.load(reader)["data"]
-        return self._create_examples(input_data, "train", language)
+        return self._create_examples(input_data, "train", language, tokenizer)
 
-    def get_dev_examples(self, data_dir, filename=None, language='en'):
+    def get_dev_examples(self, data_dir, tokenizer, filename=None, language='en'):
         """
         Returns the evaluation example from the data directory.
 
@@ -536,9 +507,9 @@ class SquadProcessor(DataProcessor):
             os.path.join(data_dir, self.dev_file if filename is None else filename), "r", encoding="utf-8"
         ) as reader:
             input_data = json.load(reader)["data"]
-        return self._create_examples(input_data, "dev", language)
+        return self._create_examples(input_data, "dev", language, tokenizer)
 
-    def _create_examples(self, input_data, set_type, language):
+    def _create_examples(self, input_data, set_type, language, tokenizer):
         is_training = set_type == "train"
         examples = []
         for entry in tqdm(input_data):
@@ -574,8 +545,10 @@ class SquadProcessor(DataProcessor):
                         title=title,
                         is_impossible=is_impossible,
                         answers=answers,
-                        language=language
+                        language=language,
+                        is_char=isinstance(tokenizer, CanineTokenizer)
                     )
+
 
                     examples.append(example)
         return examples
@@ -616,7 +589,8 @@ class SquadExample(object):
         title,
         answers=[],
         is_impossible=False,
-        language='en'
+        language='en',
+        is_char=False,
     ):
         self.qas_id = qas_id
         self.question_text = question_text
@@ -630,31 +604,41 @@ class SquadExample(object):
 
         self.language = language
 
-        doc_tokens = []
-        char_to_word_offset = []
-        prev_is_whitespace = True
+        if is_char:
+            self.doc_tokens = list(self.context_text)
+            if start_position_character is not None and not is_impossible:
+                self.start_position = start_position_character
+                self.end_position = min(start_position_character + len(answer_text) - 1, len(self.doc_tokens) - 1)
 
-        # Split on whitespace so that different tokens may be attributed to their original position.
-        for c in self.context_text:
-            if _is_whitespace(c):
-                prev_is_whitespace = True
-            else:
-                if prev_is_whitespace:
-                    doc_tokens.append(c)
+        else:
+            doc_tokens = []
+
+            char_to_word_offset = []
+            prev_is_whitespace = True
+
+            # Split on whitespace so that different tokens may be attributed to their original position.
+            for c in self.context_text:
+                if _is_whitespace(c):
+                    prev_is_whitespace = True
                 else:
-                    doc_tokens[-1] += c
-                prev_is_whitespace = False
-            char_to_word_offset.append(len(doc_tokens) - 1)
+                    if prev_is_whitespace:
+                        doc_tokens.append(c)
+                    else:
+                        doc_tokens[-1] += c
+                    prev_is_whitespace = False
+                char_to_word_offset.append(len(doc_tokens) - 1)
 
-        self.doc_tokens = doc_tokens
-        self.char_to_word_offset = char_to_word_offset
+            self.doc_tokens = doc_tokens
+            self.char_to_word_offset = char_to_word_offset
 
-        # Start end end positions only has a value during evaluation.
-        if start_position_character is not None and not is_impossible:
-            self.start_position = char_to_word_offset[start_position_character]
-            self.end_position = char_to_word_offset[
-                min(start_position_character + len(answer_text) - 1, len(char_to_word_offset) - 1)
-            ]
+
+            # Start end end positions only has a value during evaluation.
+            if start_position_character is not None and not is_impossible:
+                self.start_position = char_to_word_offset[start_position_character]
+                self.end_position = char_to_word_offset[
+                    min(start_position_character + len(answer_text) - 1, len(char_to_word_offset) - 1)
+                ]
+
 
 
 class SquadFeatures(object):

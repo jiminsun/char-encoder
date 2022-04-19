@@ -75,6 +75,8 @@ from processors.squad import (
     squad_convert_examples_to_features
 )
 
+from utils_squad import compute_predictions_logits_char
+
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -205,7 +207,7 @@ def train(args, train_dataset, model, tokenizer):
     )
     # Added here for reproductibility
     set_seed(args)
-
+    epoch_count = 1
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
@@ -298,6 +300,26 @@ def train(args, train_dataset, model, tokenizer):
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
+
+        # save ckpt after every epoch
+        result = evaluate(args, model, tokenizer, prefix=f'epoch_{epoch_count}', language=args.eval_lang)
+        output_dir = os.path.join(args.output_dir, "checkpoint-epoch_{}".format(epoch_count))
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        # Take care of distributed/parallel training
+        model_to_save = model.module if hasattr(model, "module") else model
+        model_to_save.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
+
+        torch.save(args, os.path.join(output_dir, "training_args.bin"))
+        logger.info("Saving model checkpoint to %s", output_dir)
+
+        torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+        torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+        logger.info("Saving optimizer and scheduler states to %s", output_dir)
+        epoch_count += 1
+
+
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
@@ -395,27 +417,24 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
     else:
         output_null_log_odds_file = None
 
-    # XLNet and XLM use a more complex post-processing procedure
-    if args.model_type in ["xlnet", "xlm"]:
-        start_n_top = model.config.start_n_top if hasattr(model, "config") else model.module.config.start_n_top
-        end_n_top = model.config.end_n_top if hasattr(model, "config") else model.module.config.end_n_top
-
-        predictions = compute_predictions_log_probs(
+    if isinstance(tokenizer, CanineTokenizer):
+        predictions = compute_predictions_logits_char(
             examples,
             features,
             all_results,
             args.n_best_size,
             args.max_answer_length,
+            args.do_lower_case,
             output_prediction_file,
             output_nbest_file,
             output_null_log_odds_file,
-            start_n_top,
-            end_n_top,
-            args.version_2_with_negative,
-            tokenizer,
             args.verbose_logging,
+            args.version_2_with_negative,
+            args.null_score_diff_threshold,
+            tokenizer,
         )
     else:
+
         predictions = compute_predictions_logits(
             examples,
             features,
@@ -454,7 +473,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         input_dir,
         "cached_{}_{}_{}_{}".format(
             os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
+            # list(filter(None, args.model_name_or_path.split("/"))).pop(),
+            args.model_type.replace('/', '-'),
             str(args.max_seq_length),
             str(language)
         ),
@@ -468,23 +488,13 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     else:
         logger.info("Creating features from dataset file at %s", input_dir)
 
-        if not args.data_dir and ((evaluate and not args.predict_file) or (not evaluate and not args.train_file)):
-            try:
-                import tensorflow_datasets as tfds
-            except ImportError:
-                raise ImportError("If not data_dir is specified, tensorflow_datasets needs to be installed.")
-
-            if args.version_2_with_negative:
-                logger.warn("tensorflow_datasets does not handle version 2 of SQuAD.")
-
-            tfds_examples = tfds.load("squad")
-            examples = SquadV1Processor().get_examples_from_dataset(tfds_examples, evaluate=evaluate, language=language)
+        processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
+        if evaluate:
+            examples = processor.get_dev_examples(args.data_dir, filename=args.predict_file,
+                                                  language=language, tokenizer=tokenizer)
         else:
-            processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
-            if evaluate:
-                examples = processor.get_dev_examples(args.data_dir, filename=args.predict_file, language=language)
-            else:
-                examples = processor.get_train_examples(args.data_dir, filename=args.train_file, language=language)
+            examples = processor.get_train_examples(args.data_dir, filename=args.train_file,
+                                                    language=language, tokenizer=tokenizer)
 
         features, dataset = squad_convert_examples_to_features(
             examples=examples,
@@ -797,6 +807,7 @@ def main():
                 logger.info(f"Freezing parameter {name} -- {param.size()}")
                 param.requires_grad = False
 
+
     lang2id = config.lang2id if args.model_type == "xlm" else None
     logger.info("lang2id = {}".format(lang2id))
 
@@ -873,7 +884,7 @@ def main():
             model.to(args.device)
 
             # Evaluate
-            result = evaluate(args, model, tokenizer, prefix=global_step, language=args.eval_lang, lang2id=lang2id)
+            result = evaluate(args, model, tokenizer, prefix=str(global_step), language=args.eval_lang, lang2id=lang2id)
 
             result = dict((k + ("_{}".format(global_step) if global_step else ""), v) for k, v in result.items())
             results.update(result)
@@ -881,6 +892,7 @@ def main():
     logger.info("Results: {}".format(results))
 
     return results
+
 
 
 if __name__ == "__main__":

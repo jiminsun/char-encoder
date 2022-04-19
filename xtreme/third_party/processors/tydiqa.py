@@ -135,9 +135,6 @@ def tydi_convert_example_to_features(
         List of `InputFeature`s.
     """
 
-=======
-def squad_convert_example_to_features(example, max_seq_length, doc_stride, max_query_length, is_training, lang2id):
->>>>>>> 6252cf145dc39152283ad5bd9d2d6aea7f181609
     features = []
     question_wordpieces = tokenizer.tokenize(tydi_example.question)
 
@@ -629,16 +626,6 @@ class TyDiProcessor(DataProcessor):
             max_position=45,
             fail_on_invalid=False
     ):
-        if self.train_file is None:
-            raise ValueError("SquadProcessor should be instantiated via SquadV1Processor or SquadV2Processor")
-        with open(
-            os.path.join(data_dir, self.train_file if filename is None else filename), "r", encoding="utf-8"
-        ) as reader:
-            input_data = json.load(reader)["data"]
-        return self._create_examples(input_data, "train", language)
-
-    def get_dev_examples(self, data_dir, filename=None, language='en'):
->>>>>>> 6252cf145dc39152283ad5bd9d2d6aea7f181609
         """
         Returns the evaluation example from the data directory.
 

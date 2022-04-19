@@ -56,6 +56,7 @@ from tydiqa.processor import (
     TyDiProcessor,
     tydi_convert_examples_to_features
 )
+from tydiqa.tokenization import TyDiTokenizer  # bert tokenizer
 
 # from xlm_roberta import XLMRobertaForQuestionAnswering, XLMRobertaConfig
 
@@ -199,7 +200,6 @@ def train(args, train_dataset, model, tokenizer):
             batch = tuple(t.to(args.device) for t in batch)
 
             # REFERENCE: https://github.com/google-research/language/blob/3253325bb94ec2441cc5916d30430434b2ad31b9/language/canine/tydiqa/tydi_modeling.py#L91
-
             unique_ids, input_ids, input_masks, segment_ids, start_positions, end_positions, answer_types = batch
 
             inputs = {
@@ -347,7 +347,9 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, thr
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         model.eval()
         batch = tuple(t.to(args.device) for t in batch)
+
         input_ids, input_masks, segment_ids, example_index, wp_start_offset, wp_end_offset = batch
+        # unique_ids, input_ids, input_masks, segment_ids, start_positions, end_positions, answer_types = batch
 
         with torch.no_grad():
             inputs = {
@@ -459,32 +461,46 @@ def load_and_cache_examples(
         if evaluate:
             examples = processor.get_dev_examples(
                 args.data_dir,
+                splitter=tokenizer,
                 filename=args.predict_file,
                 max_passages=args.max_passages,
                 max_position=args.max_position,
                 fail_on_invalid=args.fail_on_invalid
             )
+            features, dataset = tydi_convert_examples_to_features(
+                examples=examples,
+                tokenizer=tokenizer,
+                is_training=False,
+                max_seq_length=args.max_seq_length,
+                max_question_length=args.max_query_length,
+                doc_stride=args.doc_stride,
+                include_unknowns=args.include_unknowns,
+                return_dataset="pt",
+                threads=args.threads,
+                lang2id=lang2id
+            )
         else:
             examples = processor.get_train_examples(
                 args.data_dir,
+                splitter=tokenizer,
                 filename=args.train_file,
                 max_passages=args.max_passages,
                 max_position=args.max_position,
                 fail_on_invalid=args.fail_on_invalid
             )
 
-        features, dataset = tydi_convert_examples_to_features(
-            examples=examples,
-            tokenizer=tokenizer,
-            is_training=not evaluate,
-            max_seq_length=args.max_seq_length,
-            max_question_length=args.max_query_length,
-            doc_stride=args.doc_stride,
-            include_unknowns=args.include_unknowns,
-            return_dataset="pt",
-            threads=args.threads,
-            lang2id=lang2id
-        )
+            features, dataset = tydi_convert_examples_to_features(
+                examples=examples,
+                tokenizer=tokenizer,
+                is_training=True,
+                max_seq_length=args.max_seq_length,
+                max_question_length=args.max_query_length,
+                doc_stride=args.doc_stride,
+                include_unknowns=args.include_unknowns,
+                return_dataset="pt",
+                threads=args.threads,
+                lang2id=lang2id
+            )
 
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
@@ -494,6 +510,7 @@ def load_and_cache_examples(
         processor = TyDiProcessor()
         examples = processor.get_dev_examples(
             args.data_dir,
+            splitter=tokenizer,
             filename=args.predict_file,
             max_passages=args.max_passages,
             max_position=args.max_position,
@@ -730,7 +747,8 @@ def main():
     args.model_prefix = args.model_name_or_path.replace('/', '-')
 
     wandb.config.update(args)
-    wandb.run.name = args.task_name + '-' + wandb.run.name
+    if wandb.run.name:
+        wandb.run.name = args.task_name + '-' + wandb.run.name
 
     if (
             os.path.exists(args.output_dir)
@@ -798,6 +816,11 @@ def main():
         config.use_lang_emb = True
     if args.model_type == 'canine':
         tokenizer = CharacterSplitter()
+    elif args.model_type == 'bert':
+        tokenizer = TyDiTokenizer(
+            vocab_file=os.path.join(os.getcwd(), 'xtreme/third_party/mbert_modified_vocab.txt'),
+            fail_on_mismatch=False,
+        )
     else:
         tokenizer = tokenizer_class.from_pretrained(
             args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
@@ -881,6 +904,11 @@ def main():
 
         if args.model_type == 'canine':
             tokenizer = CharacterSplitter()
+        elif args.model_type == 'bert':
+            tokenizer = TyDiTokenizer(
+                vocab_file=os.path.join(os.getcwd(), 'xtreme/third_party/mbert_modified_vocab.txt'),
+                fail_on_mismatch=False,
+            )
         else:
             tokenizer = tokenizer_class.from_pretrained(
                 args.output_dir,
@@ -910,7 +938,12 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = '_' + checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = CanineTyDiQAModel.from_pretrained(checkpoint, force_download=True)
+
+            if args.model_type == 'canine':
+                model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+            elif args.model_type == 'bert':
+                model = BertTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+
             model.to(args.device)
 
             # Evaluate

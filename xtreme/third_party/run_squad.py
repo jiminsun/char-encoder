@@ -58,6 +58,9 @@ from transformers import (
     XLMRobertaConfig,
     XLMRobertaTokenizer,
     XLMRobertaForQuestionAnswering,
+    T5Config,
+    T5ForConditionalGeneration,
+    T5Tokenizer,
 )
 
 from transformers.data.metrics.squad_metrics import (
@@ -95,6 +98,7 @@ MODEL_CLASSES = {
     "albert": (AlbertConfig, AlbertForQuestionAnswering, AlbertTokenizer),
     "xlm-roberta": (XLMRobertaConfig, XLMRobertaForQuestionAnswering, XLMRobertaTokenizer),
     "canine": (CanineConfig, CanineForQuestionAnswering, CanineTokenizer),
+    "t5": (T5Config, T5ForConditionalGeneration, T5Tokenizer),
 }
 
 
@@ -222,10 +226,15 @@ def train(args, train_dataset, model, tokenizer):
                 "input_ids": batch[0],
                 "attention_mask": batch[1],
                 "token_type_ids": None if args.model_type in ["xlm", "xlm-roberta", "distilbert"] else batch[2],
-                "start_positions": batch[3],
-                "end_positions": batch[4],
             }
 
+            
+            if args.model_type in ["t5"]:
+                # TODO: modify inputs to have the necessary y/labels to calculate t5 loss
+                pass
+            else:
+                # we only add start/end positions to non-t5 models
+                inputs.update({"start_positions": batch[3], "end_positions": batch[4]})
             if args.model_type in ["xlnet", "xlm"]:
                 inputs.update({"cls_index": batch[5], "p_mask": batch[6]})
                 if args.version_2_with_negative:
@@ -352,6 +361,10 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
                 inputs["langs"] = batch[6]
 
             outputs = model(**inputs).to_tuple()
+
+            if args.model_type in ["t5"]:
+                # TODO: extract label from tokens that t5 decoded
+                pass
 
         for i, example_index in enumerate(example_indices):
             eval_feature = features[example_index.item()]

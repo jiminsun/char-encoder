@@ -68,13 +68,25 @@ from transformers.data.metrics.squad_metrics import (
 
 # from xlm_roberta import XLMRobertaForQuestionAnswering, XLMRobertaConfig
 
-from processors.squad import (
+# from processors.squad import (
+#     SquadResult,
+#     SquadV1Processor,
+#     SquadV2Processor,
+#     squad_convert_examples_to_features
+# )
+
+from processors.multitask_adapter_squad import (
     SquadResult,
     SquadV1Processor,
     SquadV2Processor,
     squad_convert_examples_to_features
 )
 
+from adapters.multitask import (
+    CanineForQAWithSubwordPrediction,
+)
+
+from adapters.task_languages import TYDIQA_GOLDP_LANGS
 from utils_squad import compute_predictions_logits_char
 
 try:
@@ -96,8 +108,10 @@ MODEL_CLASSES = {
     "distilbert": (DistilBertConfig, DistilBertForQuestionAnswering, DistilBertTokenizer),
     "albert": (AlbertConfig, AlbertForQuestionAnswering, AlbertTokenizer),
     "xlm-roberta": (XLMRobertaConfig, XLMRobertaForQuestionAnswering, XLMRobertaTokenizer),
-    "canine": (CanineConfig, CanineForQuestionAnswering, CanineTokenizer),
+    "canine": (CanineConfig, CanineForQAWithSubwordPrediction, CanineTokenizer),
 }
+
+lang2id = TYDIQA_GOLDP_LANGS
 
 
 def set_seed(args):
@@ -149,14 +163,6 @@ def train(args, train_dataset, model, tokenizer):
         optimizer.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "optimizer.pt")))
         scheduler.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "scheduler.pt")))
 
-    if args.fp16:
-        try:
-            from apex import amp
-        except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-
-        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
-
     # multi-gpu training (should be after apex fp16 initialization)
     if args.n_gpu > 1:
         model = torch.nn.DataParallel(model)
@@ -201,6 +207,8 @@ def train(args, train_dataset, model, tokenizer):
             logger.info("  Starting fine-tuning.")
 
     tr_loss, logging_loss = 0.0, 0.0
+    tr_subword_loss, subword_logging_loss = 0.0, 0.0
+
     model.zero_grad()
     train_iterator = trange(
         epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
@@ -226,6 +234,8 @@ def train(args, train_dataset, model, tokenizer):
                 "token_type_ids": None if args.model_type in ["xlm", "xlm-roberta", "distilbert"] else batch[2],
                 "start_positions": batch[3],
                 "end_positions": batch[4],
+                "language_id": batch[7],
+                "subword_labels": batch[8]
             }
 
             if args.model_type in ["xlnet", "xlm"]:
@@ -234,27 +244,25 @@ def train(args, train_dataset, model, tokenizer):
                     inputs.update({"is_impossible": batch[7]})
             if args.model_type == "xlm":
                 inputs["langs"] = batch[7]
+
             outputs = model(**inputs)
             # model outputs are always tuple in transformers (see doc)
-            loss = outputs[0]
+            task_loss = outputs['loss']
+            subword_loss = outputs['subword_loss']
+            loss = task_loss + args.subword_loss_weight * subword_loss
+            # loss, start_logits, end_logits, hidden_states, attentions, subword_loss, subword_logits
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
-            if args.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+            loss.backward()
 
             tr_loss += loss.item()
+            tr_subword_loss += subword_loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
-                if args.fp16:
-                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-                else:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
@@ -278,7 +286,13 @@ def train(args, train_dataset, model, tokenizer):
                         "global_step": global_step,
                     })
 
+                    if args.subword_loss_weight > 0:
+                        wandb.log({
+                            "train/subword_loss": (tr_subword_loss - subword_logging_loss) / args.logging_steps,
+                        })
+
                     logging_loss = tr_loss
+                    subword_logging_loss = tr_subword_loss
 
                 # Save model checkpoint
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
@@ -302,7 +316,6 @@ def train(args, train_dataset, model, tokenizer):
                 break
 
         # save ckpt after every epoch
-        result = evaluate(args, model, tokenizer, prefix=f'epoch_{epoch_count}', language=args.eval_lang)
         output_dir = os.path.join(args.output_dir, "checkpoint-epoch_{}".format(epoch_count))
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -317,8 +330,11 @@ def train(args, train_dataset, model, tokenizer):
         torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
         torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
         logger.info("Saving optimizer and scheduler states to %s", output_dir)
-        epoch_count += 1
 
+        evaluate(args, model, tokenizer,
+                 prefix=f'epoch_{epoch_count}',
+                 language=args.eval_lang, lang2id=lang2id)
+        epoch_count += 1
 
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
@@ -400,7 +416,7 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
                 )
 
             else:
-                start_logits, end_logits = output
+                start_logits, end_logits, subword_logits = output
                 result = SquadResult(unique_id, start_logits, end_logits)
 
             all_results.append(result)
@@ -469,16 +485,27 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
-    cached_features_file = os.path.join(
-        input_dir,
-        "cached_{}_{}_{}_{}".format(
-            os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
-            # list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            args.model_type.replace('/', '-'),
-            str(args.max_seq_length),
-            str(language)
-        ),
-    )
+    if args.subword_loss_weight > 0:
+        cached_features_file = os.path.join(
+            input_dir,
+            "cached_multitask_adapter_{}_{}_{}_{}".format(
+                os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
+                list(filter(None, args.model_name_or_path.split("/"))).pop(),
+                str(args.max_seq_length),
+                str(language)
+            ),
+        )
+    else:
+        cached_features_file = os.path.join(
+            input_dir,
+            "cached_{}_{}_{}_{}".format(
+                os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
+                # list(filter(None, args.model_name_or_path.split("/"))).pop(),
+                args.model_type.replace('/', '-'),
+                str(args.max_seq_length),
+                str(language)
+            ),
+        )
 
     # Init features and dataset from cache if it exists
     if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
@@ -487,15 +514,21 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         features, dataset = features_and_dataset["features"], features_and_dataset["dataset"]
     else:
         logger.info("Creating features from dataset file at %s", input_dir)
-
         processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
         if evaluate:
-            examples = processor.get_dev_examples(args.data_dir, filename=args.predict_file,
-                                                  language=language, tokenizer=tokenizer)
+            examples = processor.get_dev_examples(
+                args.data_dir,
+                filename=args.predict_file,
+                language=language,
+                tokenizer=tokenizer
+            )
         else:
-            examples = processor.get_train_examples(args.data_dir, filename=args.train_file,
-                                                    language=language, tokenizer=tokenizer)
-
+            examples = processor.get_train_examples(
+                args.data_dir,
+                filename=args.train_file,
+                language=language,
+                tokenizer=tokenizer
+            )
         features, dataset = squad_convert_examples_to_features(
             examples=examples,
             tokenizer=tokenizer,
@@ -507,7 +540,6 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
             threads=args.threads,
             lang2id=lang2id
         )
-
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save({"features": features, "dataset": dataset}, cached_features_file)
@@ -518,6 +550,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     if output_examples:
         return dataset, examples, features
+
     return dataset
 
 
@@ -719,11 +752,43 @@ def main():
         help="Whether to freeze the embedding layer of CANINE"
     )
 
+    parser.add_argument(
+        "--subword_loss_weight",
+        type=float,
+        default=0.0,
+    )
+
+    parser.add_argument(
+        "--vocab_size",
+        type=int,
+        default=3,
+        help="Number of labels for subword prediction auxiliary task"
+    )
+
     args = parser.parse_args()
     args.model_prefix = args.model_name_or_path.replace('/', '-')
 
     wandb.config.update(args)
-    wandb.run.name = args.task_name + '-' + wandb.run.name
+    run_name = [args.task_name]
+
+    if args.train_lang == 'all':
+        run_name.append('all')
+    else:
+        run_name.append('tgt')
+        run_name.append(args.train_lang)
+
+    if args.subword_loss_weight > 0.0:
+        run_name.append('multitask')
+        run_name.append(str(args.subword_loss_weight))
+
+    # append model name
+    if 'canine' in args.model_name_or_path:
+        run_name.append(args.model_name_or_path.split('/')[-1])  # canine-s or canine-c
+
+    run_name.append(wandb.run.name.split()[-1])  # experiment number
+
+    wandb.run.name = '-'.join(run_name)
+
 
     if (
             os.path.exists(args.output_dir)
@@ -799,6 +864,7 @@ def main():
         from_tf=bool(".ckpt" in args.model_name_or_path),
         config=config,
         cache_dir=args.cache_dir if args.cache_dir else None,
+        vocab_size=args.vocab_size,
     )
 
     if args.model_type == "canine" and args.freeze_embedding:
@@ -808,7 +874,7 @@ def main():
                 param.requires_grad = False
 
 
-    lang2id = config.lang2id if args.model_type == "xlm" else None
+    lang2id = config.lang2id if args.model_type == "xlm" else TYDIQA_GOLDP_LANGS
     logger.info("lang2id = {}".format(lang2id))
 
     if args.local_rank == 0:
@@ -855,7 +921,14 @@ def main():
         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
         # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir, force_download=True)
+        model = model_class.from_pretrained(
+            args.output_dir,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+            vocab_size=args.vocab_size,
+        )
+
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         model.to(args.device)
 
@@ -880,7 +953,11 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = model_class.from_pretrained(checkpoint, force_download=True)
+            model = model_class.from_pretrained(
+                checkpoint,
+                force_download=True,
+                vocab_size=args.vocab_size,
+            )
             model.to(args.device)
 
             # Evaluate

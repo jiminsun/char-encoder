@@ -24,6 +24,7 @@ import argparse
 import glob
 import logging
 import os
+import re
 import random
 import timeit
 
@@ -68,24 +69,17 @@ from transformers.data.metrics.squad_metrics import (
 
 # from xlm_roberta import XLMRobertaForQuestionAnswering, XLMRobertaConfig
 
-# from processors.squad import (
-#     SquadResult,
-#     SquadV1Processor,
-#     SquadV2Processor,
-#     squad_convert_examples_to_features
-# )
-
 from processors.multitask_adapter_squad import (
     SquadResult,
     SquadV1Processor,
     SquadV2Processor,
     squad_convert_examples_to_features
 )
+from processors.subword_prediction import compute_subword_pred_metrics
 
 from adapters.multitask import (
     CanineForQAWithSubwordPrediction,
 )
-
 from adapters.task_languages import TYDIQA_GOLDP_LANGS
 from utils_squad import compute_predictions_logits_char
 
@@ -216,7 +210,9 @@ def train(args, train_dataset, model, tokenizer):
     # Added here for reproductibility
     set_seed(args)
     epoch_count = 1
+    # decay_rate = (torch.arange(args.num_train_epochs, 0, -1) / args.num_train_epochs)
     for _ in train_iterator:
+        # decaying_factor = decay_rate[epoch_count - 1].item()
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
 
@@ -249,8 +245,12 @@ def train(args, train_dataset, model, tokenizer):
             # model outputs are always tuple in transformers (see doc)
             task_loss = outputs['loss']
             subword_loss = outputs['subword_loss']
-            loss = task_loss + args.subword_loss_weight * subword_loss
             # loss, start_logits, end_logits, hidden_states, attentions, subword_loss, subword_logits
+            if args.dynamic_weight:
+                mu = task_loss.item() / subword_loss.item()
+            else:
+                mu = args.subword_loss_weight
+            loss = task_loss + mu * subword_loss
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -259,7 +259,7 @@ def train(args, train_dataset, model, tokenizer):
 
             loss.backward()
 
-            tr_loss += loss.item()
+            tr_loss += task_loss.item()
             tr_subword_loss += subword_loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -271,25 +271,36 @@ def train(args, train_dataset, model, tokenizer):
 
                 # Log metrics
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    # Only evaluate when single GPU otherwise metrics may not average well
-                    if args.local_rank == -1 and args.evaluate_during_training:
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            tb_writer.add_scalar("eval_{}".format(key), value, global_step)
-
-                    tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+                    # Compute subword prediction scores.
+                    train_subword_results = compute_subword_pred_metrics(
+                        labels=to_list(batch[8].clone().long()),
+                        logits=outputs['subword_logits'].clone().detach().cpu()
+                    )
 
                     wandb.log({
                         "train/learning_rate": scheduler.get_lr()[0],
                         "train/loss": (tr_loss - logging_loss) / args.logging_steps,
-                        "global_step": global_step,
-                    })
+                    }, step=global_step)
 
                     if args.subword_loss_weight > 0:
                         wandb.log({
                             "train/subword_loss": (tr_subword_loss - subword_logging_loss) / args.logging_steps,
-                        })
+                            "train/subword_f1": train_subword_results['f1'],
+                            f"train/subword_accuracy": train_subword_results['accuracy'],
+                            f"train/subword_recall": train_subword_results['recall'],
+                            f"train/subword_precision": train_subword_results['precision'],
+                        }, step=global_step)
+
+                    if args.dynamic_weight:
+                        wandb.log({
+                            "train/dynamic_weight": mu,
+                            "train/subword_loss": (tr_subword_loss - subword_logging_loss) / args.logging_steps,
+                            "train/subword_f1": train_subword_results['f1'],
+                            f"train/subword_accuracy": train_subword_results['accuracy'],
+                            f"train/subword_recall": train_subword_results['recall'],
+                            f"train/subword_precision": train_subword_results['precision'],
+                        }, step=global_step)
+
 
                     logging_loss = tr_loss
                     subword_logging_loss = tr_subword_loss
@@ -333,7 +344,7 @@ def train(args, train_dataset, model, tokenizer):
 
         evaluate(args, model, tokenizer,
                  prefix=f'epoch_{epoch_count}',
-                 language=args.eval_lang, lang2id=lang2id)
+                 language=args.eval_lang, lang2id=lang2id, global_step=global_step)
         epoch_count += 1
 
         if args.max_steps > 0 and global_step > args.max_steps:
@@ -346,7 +357,7 @@ def train(args, train_dataset, model, tokenizer):
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
+def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, global_step=None):
     dataset, examples, features = load_and_cache_examples(args, tokenizer, evaluate=True, output_examples=True,
                                                           language=language, lang2id=lang2id)
 
@@ -369,6 +380,8 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
     logger.info("  Batch size = %d", args.eval_batch_size)
 
     all_results = []
+    all_subword_labels = []
+    all_subword_logits = []
     start_time = timeit.default_timer()
 
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
@@ -388,6 +401,9 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
                 inputs.update({"cls_index": batch[4], "p_mask": batch[5]})
             if args.model_type == "xlm":
                 inputs["langs"] = batch[6]
+            if args.subword_loss_weight > 0 or args.dynamic_weight:
+                subword_labels = batch[7].clone()
+                all_subword_labels += to_list(subword_labels.long())
 
             outputs = model(**inputs).to_tuple()
 
@@ -418,6 +434,8 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
             else:
                 start_logits, end_logits, subword_logits = output
                 result = SquadResult(unique_id, start_logits, end_logits)
+                if args.subword_loss_weight > 0 or args.dynamic_weight:
+                    all_subword_logits += [subword_logits]
 
             all_results.append(result)
 
@@ -469,10 +487,18 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None):
 
     # Compute the F1 and exact scores.
     results = squad_evaluate(examples, predictions)
-
     wandb.log({
-        f"valid/{args.task_name}-{language}/f1": results['f1']
-    })
+        f"valid/{args.task_name}-{language}/f1": results['f1'],
+    }, step=global_step)
+
+    # Compute subword prediction scores.
+    if args.subword_loss_weight > 0 or args.dynamic_weight:
+        subword_results = compute_subword_pred_metrics(labels=all_subword_labels,
+                                                       logits=all_subword_logits)
+        for metric, score in subword_results.items():
+            wandb.log({
+                f"valid/{args.task_name}-{language}/subword_{metric}": score
+            }, step=global_step)
 
     return results
 
@@ -485,27 +511,27 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
-    if args.subword_loss_weight > 0:
-        cached_features_file = os.path.join(
-            input_dir,
-            "cached_multitask_adapter_{}_{}_{}_{}".format(
-                os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
-                list(filter(None, args.model_name_or_path.split("/"))).pop(),
-                str(args.max_seq_length),
-                str(language)
-            ),
-        )
-    else:
-        cached_features_file = os.path.join(
-            input_dir,
-            "cached_{}_{}_{}_{}".format(
-                os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
-                # list(filter(None, args.model_name_or_path.split("/"))).pop(),
-                args.model_type.replace('/', '-'),
-                str(args.max_seq_length),
-                str(language)
-            ),
-        )
+    # if args.subword_loss_weight > 0 or args.dynamic_weight:
+    cached_features_file = os.path.join(
+        input_dir,
+        "cached_multitask_{}_{}_{}_{}".format(
+            os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
+            list(filter(None, args.model_name_or_path.split("/"))).pop(),
+            str(args.max_seq_length),
+            str(language)
+        ),
+    )
+    # else:
+    #     cached_features_file = os.path.join(
+    #         input_dir,
+    #         "cached_{}_{}_{}_{}".format(
+    #             os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
+    #             # list(filter(None, args.model_name_or_path.split("/"))).pop(),
+    #             args.model_type.replace('/', '-'),
+    #             str(args.max_seq_length),
+    #             str(language)
+    #         ),
+    #     )
 
     # Init features and dataset from cache if it exists
     if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
@@ -759,6 +785,16 @@ def main():
     )
 
     parser.add_argument(
+        "--dynamic_weight",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--subword_weight_decay",
+        action="store_true",
+    )
+
+    parser.add_argument(
         "--vocab_size",
         type=int,
         default=3,
@@ -780,12 +816,16 @@ def main():
     if args.subword_loss_weight > 0.0:
         run_name.append('multitask')
         run_name.append(str(args.subword_loss_weight))
+    elif args.dynamic_weight:
+        run_name.append('multitask')
+        run_name.append('dynamic')
 
     # append model name
     if 'canine' in args.model_name_or_path:
-        run_name.append(args.model_name_or_path.split('/')[-1])  # canine-s or canine-c
+        model_name = re.findall('canine-[s|c]', args.model_name_or_path)[0]
+        run_name.append(model_name)  # canine-s or canine-c
 
-    run_name.append(wandb.run.name.split()[-1])  # experiment number
+    run_name.append(wandb.run.name.split('-')[-1])  # experiment number
 
     wandb.run.name = '-'.join(run_name)
 
@@ -961,7 +1001,8 @@ def main():
             model.to(args.device)
 
             # Evaluate
-            result = evaluate(args, model, tokenizer, prefix=str(global_step), language=args.eval_lang, lang2id=lang2id)
+            result = evaluate(args, model, tokenizer,
+                              prefix=str(global_step), language=args.eval_lang, lang2id=lang2id, global_step=global_step)
 
             result = dict((k + ("_{}".format(global_step) if global_step else ""), v) for k, v in result.items())
             results.update(result)

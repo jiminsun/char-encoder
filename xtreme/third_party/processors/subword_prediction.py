@@ -16,17 +16,6 @@ import sentencepiece as spm
 import numpy as np
 from datasets import load_metric
 
-SUPPORTED_LANGUAGES = ['ko']
-PRETRAINED_TOKENIZERS = {
-    'ko': 'kykim/bert-kor-base',
-    'ja': 'cl-tohoku/bert-base-japanese',
-    'mbert': 'bert-base-multilingual-cased'
-}
-
-TOKENIZER_CLASS = {
-    'ko': BertTokenizer,
-    'ja': AutoTokenizer
-}
 
 BOUNDARY_LABELS = {
     '[PAD]': 0,
@@ -39,6 +28,8 @@ metric = load_metric("seqeval")
 
 
 def compute_subword_pred_metrics(labels, logits, ignore_index=0):
+    logits = np.array(logits)
+    logits[:, :, 0] = - np.inf
     predictions = np.argmax(logits, axis=-1)
     # Remove ignored index (special tokens) and convert to labels
     true_labels = [[SUBWORD_ID2LABEL[l] for l in label if l != ignore_index] for label in labels]
@@ -180,7 +171,6 @@ class RussianTokenizer:
         doc = self.tokenizer(text)
         tokens = [token.text for token in doc]
         return tokens
-
 
 
 def convert_to_unicode(text):

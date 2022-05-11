@@ -105,6 +105,10 @@ MODEL_CLASSES = {
     "canine": (CanineConfig, CanineForQAWithSubwordPrediction, CanineTokenizer),
 }
 
+MULTITASK_MODEL_CLASSES = {
+    "canine": (CanineConfig, CanineForQAWithSubwordPrediction, CanineTokenizer),
+}
+
 lang2id = TYDIQA_GOLDP_LANGS
 
 
@@ -487,18 +491,28 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, glo
 
     # Compute the F1 and exact scores.
     results = squad_evaluate(examples, predictions)
-    wandb.log({
-        f"valid/{args.task_name}-{language}/f1": results['f1'],
-    }, step=global_step)
+    if global_step is not None:
+        wandb.log({
+            f"valid/{args.task_name}-{language}/f1": results['f1'],
+        }, step=int(global_step))
+    else:
+        wandb.log({
+            f"valid/{args.task_name}-{language}/f1": results['f1'],
+        })
 
     # Compute subword prediction scores.
     if args.subword_loss_weight > 0 or args.dynamic_weight:
         subword_results = compute_subword_pred_metrics(labels=all_subword_labels,
                                                        logits=all_subword_logits)
         for metric, score in subword_results.items():
-            wandb.log({
-                f"valid/{args.task_name}-{language}/subword_{metric}": score
-            }, step=global_step)
+            if global_step is not None:
+                wandb.log({
+                    f"valid/{args.task_name}-{language}/subword_{metric}": score
+                }, step=int(global_step))
+            else:
+                wandb.log({
+                    f"valid/{args.task_name}-{language}/subword_{metric}": score
+                })
 
     return results
 
@@ -511,7 +525,6 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
-    # if args.subword_loss_weight > 0 or args.dynamic_weight:
     cached_features_file = os.path.join(
         input_dir,
         "cached_multitask_{}_{}_{}_{}".format(
@@ -521,17 +534,6 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
             str(language)
         ),
     )
-    # else:
-    #     cached_features_file = os.path.join(
-    #         input_dir,
-    #         "cached_{}_{}_{}_{}".format(
-    #             os.path.basename(args.predict_file) if evaluate else os.path.basename(args.train_file),
-    #             # list(filter(None, args.model_name_or_path.split("/"))).pop(),
-    #             args.model_type.replace('/', '-'),
-    #             str(args.max_seq_length),
-    #             str(language)
-    #         ),
-    #     )
 
     # Init features and dataset from cache if it exists
     if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
@@ -886,7 +888,10 @@ def main():
         torch.distributed.barrier()
 
     args.model_type = args.model_type.lower()
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    if args.subword_loss_weight > 0 or args.dynamic_weight:
+        config_class, model_class, tokenizer_class = MULTITASK_MODEL_CLASSES[args.model_type]
+    else:
+        config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     config = config_class.from_pretrained(
         args.config_name if args.config_name else args.model_name_or_path,
         cache_dir=args.cache_dir if args.cache_dir else None,
@@ -899,13 +904,21 @@ def main():
         do_lower_case=args.do_lower_case,
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
-    model = model_class.from_pretrained(
-        args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-        vocab_size=args.vocab_size,
-    )
+    if isinstance(model_class, CanineForQAWithSubwordPrediction):
+        model = model_class.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+            # vocab_size=args.vocab_size,
+        )
+    else:
+        model = model_class.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+        )
 
     if args.model_type == "canine" and args.freeze_embedding:
         for name, param in model.named_parameters():
@@ -961,13 +974,21 @@ def main():
         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
         # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(
-            args.output_dir,
-            from_tf=bool(".ckpt" in args.model_name_or_path),
-            config=config,
-            cache_dir=args.cache_dir if args.cache_dir else None,
-            vocab_size=args.vocab_size,
-        )
+        if isinstance(model_class, CanineForQAWithSubwordPrediction):
+            model = model_class.from_pretrained(
+                args.output_dir,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir if args.cache_dir else None,
+                # vocab_size=args.vocab_size,
+            )
+        else:
+            model = model_class.from_pretrained(
+                args.output_dir,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir if args.cache_dir else None,
+            )
 
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         model.to(args.device)
@@ -993,11 +1014,17 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = model_class.from_pretrained(
-                checkpoint,
-                force_download=True,
-                vocab_size=args.vocab_size,
-            )
+            if isinstance(model_class, CanineForQAWithSubwordPrediction):
+                model = model_class.from_pretrained(
+                    checkpoint,
+                    force_download=True,
+                    # vocab_size=args.vocab_size,
+                )
+            else:
+                model = model_class.from_pretrained(
+                    checkpoint,
+                    force_download=True,
+                )
             model.to(args.device)
 
             # Evaluate

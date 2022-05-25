@@ -38,9 +38,25 @@ from transformers.trainer_utils import (
 )
 
 import datasets
-from datasets import load_dataset, load_metric
+from datasets import load_dataset, load_metric, concatenate_datasets
 
-from processors.t5_utils import ModelArguments, DataTrainingArguments
+from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments
+
+languages = {
+    'wikiann': ['ko', 'ja']
+        # ['ace', 'af', 'als', 'am', 'an', 'ang', 'ar', 'arc', 'arz', 'as', 'ast', 'ay', 'az', 'ba', 'bar',
+        #         'bat-smg', 'be', 'be-x-old', 'bg', 'bh', 'bn', 'bo', 'br', 'bs', 'ca', 'cbk-zam', 'cdo', 'ce', 'ceb',
+        #         'ckb', 'co', 'crh', 'cs', 'csb', 'cv', 'cy', 'da', 'de', 'diq', 'dv', 'el', 'eml', 'en', 'eo', 'es',
+        #         'et', 'eu', 'ext', 'fa', 'fi', 'fiu-vro', 'fo', 'fr', 'frr', 'fur', 'fy', 'ga', 'gan', 'gd', 'gl',
+        #         'gn', 'gu', 'hak', 'he', 'hi', 'hr', 'hsb', 'hu', 'hy', 'ia', 'id', 'ig', 'ilo', 'io', 'is', 'it',
+        #         'ja', 'jbo', 'jv', 'ka', 'kk', 'km', 'kn', 'ko', 'ksh', 'ku', 'ky', 'la', 'lb', 'li', 'lij', 'lmo',
+        #         'ln', 'lt', 'lv', 'map-bms', 'mg', 'mhr', 'mi', 'min', 'mk', 'ml', 'mn', 'mr', 'ms', 'mt', 'mwl',
+        #         'my', 'mzn', 'nap', 'nds', 'ne', 'nl', 'nn', 'no', 'nov', 'oc', 'or', 'os', 'pa', 'pdc', 'pl', 'pms',
+        #         'pnb', 'ps', 'pt', 'qu', 'rm', 'ro', 'ru', 'rw', 'sa', 'sah', 'scn', 'sco', 'sd', 'sh', 'si', 'simple',
+        #         'sk', 'sl', 'so', 'sq', 'sr', 'su', 'sv', 'sw', 'szl', 'ta', 'te', 'tg', 'th', 'tk', 'tl', 'tr', 'tt',
+        #         'ug', 'uk', 'ur', 'uz', 'vec', 'vep', 'vi', 'vls', 'vo', 'wa', 'war', 'wuu', 'xmf', 'yi', 'yo', 'zea',
+        #         'zh', 'zh-classical', 'zh-min-nan', 'zh-yue'],
+}
 
 
 if is_apex_available():
@@ -65,8 +81,99 @@ except ImportError:
     except ImportError:
         _has_tensorboard = False
 
+
 def is_tensorboard_available():
     return _has_tensorboard
+
+
+class NERSeq2SeqTrainer(Seq2SeqTrainer):
+    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.eval_examples = eval_examples
+        self.post_process_function = post_process_function
+
+    # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
+    def evaluate(
+        self,
+        eval_dataset: Optional[Dataset] = None,
+        ignore_keys: Optional[List[str]] = None,
+        metric_key_prefix: str = "eval",
+        max_length: Optional[int] = None,
+        num_beams: Optional[int] = None,
+    ) -> Dict[str, float]:
+        self._max_length = max_length if max_length is not None else self.args.generation_max_length
+        self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
+
+        eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
+        eval_dataloader = self.get_eval_dataloader(eval_dataset)
+
+        # Temporarily disable metric computation, we will do it in the loop here.
+        compute_metrics = self.compute_metrics
+        self.compute_metrics = None
+        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
+        try:
+            output = eval_loop(
+                eval_dataloader,
+                description="Evaluation",
+                # No point gathering the predictions if there are no metrics, otherwise we defer to
+                # self.args.prediction_loss_only
+                prediction_loss_only=True if compute_metrics is None else None,
+                ignore_keys=ignore_keys,
+            )
+        finally:
+            self.compute_metrics = compute_metrics
+
+        if self.post_process_function is not None and self.compute_metrics is not None:
+            eval_preds = self.post_process_function(eval_dataset, output)
+            metrics = self.compute_metrics(eval_preds)
+
+            # Prefix all keys with metric_key_prefix + '_'
+            for key in list(metrics.keys()):
+                if not key.startswith(f"{metric_key_prefix}_"):
+                    metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
+
+            self.log(metrics)
+        else:
+            metrics = {}
+
+        if self.args.tpu_metrics_debug or self.args.debug:
+            # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
+            xm.master_print(met.metrics_report())
+
+        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
+        return metrics
+
+    def predict(self, predict_dataset, predict_examples, ignore_keys=None, metric_key_prefix: str = "test"):
+        predict_dataloader = self.get_test_dataloader(predict_dataset)
+
+        # Temporarily disable metric computation, we will do it in the loop here.
+        compute_metrics = self.compute_metrics
+        self.compute_metrics = None
+        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
+        try:
+            output = eval_loop(
+                predict_dataloader,
+                description="Prediction",
+                # No point gathering the predictions if there are no metrics, otherwise we defer to
+                # self.args.prediction_loss_only
+                prediction_loss_only=True if compute_metrics is None else None,
+                ignore_keys=ignore_keys,
+            )
+        finally:
+            self.compute_metrics = compute_metrics
+
+        if self.post_process_function is None or self.compute_metrics is None:
+            return output
+
+        predictions = self.post_process_function(predict_examples, predict_dataset, output.predictions, "predict")
+        metrics = self.compute_metrics(predictions)
+
+        # Prefix all keys with metric_key_prefix + '_'
+        for key in list(metrics.keys()):
+            if not key.startswith(f"{metric_key_prefix}_"):
+                metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
+
+        return PredictionOutput(predictions=predictions.predictions, label_ids=predictions.label_ids, metrics=metrics)
 
 
 logger = logging.getLogger(__name__)
@@ -78,10 +185,8 @@ MODEL_CLASSES = {
 logger = logging.getLogger(__name__)
 
 
-
-
-question_answering_column_name_mapping = {
-    "squad_v2": ("question", "context", "answer"),
+wikiann_column_name_mapping = {
+    'wikiann': ('tokens', 'ner_tags', 'langs', 'spans')
 }
 
 
@@ -90,9 +195,10 @@ if is_torch_tpu_available():
     import torch_xla.debug.metrics as met
 
 
-class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+class TokenClassificationSeq2SeqTrainer(Seq2SeqTrainer):
+    def __init__(self, *args, task='wikiann', eval_examples=None, post_process_function=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.task = task
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
 
@@ -183,31 +289,30 @@ class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
 
 
 def main():
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
+    parser = HfArgumentParser((UserArguments, ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        args, model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        args, model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     # wandb logging
 
     # Wandb experiment name configuration
-    # wandb.config.update(model_args)
-    #
-    # run_name = [data_args.dataset_name]
-    #
-    # # append model name
-    # if model_args.model_name_or_path.startwith('google/'):
-    #     model_name = model_args.model_name_or_path[7:]  # strip 'google/'
-    #     run_name.append(model_name)  # canine-s or canine-c
-    # else:
-    #     run_name.append(model_args.model_name_or_path)
-    #
-    # run_name.append(wandb.run.name.split('-')[-1])  # experiment number
-    #
-    # wandb.run.name = '-'.join(run_name)
+    wandb.config.update(model_args)
+
+    run_name = [data_args.dataset_name, args.train_lang]
+
+    # append model name
+    if model_args.model_name_or_path.startswith('google/'):
+        model_name = model_args.model_name_or_path[7:]  # strip 'google/'
+        run_name.append(model_name)  # canine-s or canine-c
+    else:
+        run_name.append(model_args.model_name_or_path)
+
+    run_name.append(wandb.run.name.split('-')[-1])  # experiment number
+    wandb.run.name = '-'.join(run_name)
 
     # Setup logging
     logging.basicConfig(
@@ -256,24 +361,27 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            data_args.dataset_name, data_args.dataset_config_name, cache_dir=model_args.cache_dir
+    assert data_args.dataset_name is not None
+    # Downloading and loading a dataset from the hub.
+    if args.train_lang == 'all':
+        langs = languages[data_args.dataset_name]
+        lang_datasets = [load_dataset(data_args.dataset_name, l, cache_dir=model_args.cache_dir) for l in langs]
+        train_datasets = concatenate_datasets(
+            [d['train'] for d in lang_datasets]
         )
+        validation_datasets = concatenate_datasets(
+            [d['validation'] for d in lang_datasets]
+        )
+        test_datasets = concatenate_datasets(
+            [d['test'] for d in lang_datasets]
+        )
+        raw_datasets = {
+            'train': train_datasets,
+            'validation': validation_datasets,
+            'test': test_datasets
+        }
     else:
-        data_files = {}
-        if data_args.train_file is not None:
-            data_files["train"] = data_args.train_file
-            extension = data_args.train_file.split(".")[-1]
-        if data_args.validation_file is not None:
-            data_files["validation"] = data_args.validation_file
-            extension = data_args.validation_file.split(".")[-1]
-        if data_args.test_file is not None:
-            data_files["test"] = data_args.test_file
-            extension = data_args.test_file.split(".")[-1]
-        raw_datasets = load_dataset(extension, data_files=data_files, field="data",
-                                    cache_dir=model_args.cache_dir)
+        raw_datasets = load_dataset(data_args.dataset_name, args.train_lang, cache_dir=model_args.cache_dir)
 
     # Load pretrained model and tokenizer
     #
@@ -319,33 +427,6 @@ def main():
         logger.info("There is nothing to do. Please pass `do_train`, `do_eval` and/or `do_predict`.")
         return
 
-    # Get the column names for input/target.
-    dataset_columns = question_answering_column_name_mapping.get(data_args.dataset_name, None)
-    if data_args.question_column is None:
-        question_column = dataset_columns[0] if dataset_columns is not None else column_names[0]
-    else:
-        question_column = data_args.question_column
-        if question_column not in column_names:
-            raise ValueError(
-                f"--question_column' value '{data_args.question_column}' needs to be one of: {', '.join(column_names)}"
-            )
-    if data_args.context_column is None:
-        context_column = dataset_columns[1] if dataset_columns is not None else column_names[1]
-    else:
-        context_column = data_args.context_column
-        if context_column not in column_names:
-            raise ValueError(
-                f"--context_column' value '{data_args.context_column}' needs to be one of: {', '.join(column_names)}"
-            )
-    if data_args.answer_column is None:
-        answer_column = dataset_columns[2] if dataset_columns is not None else column_names[2]
-    else:
-        answer_column = data_args.answer_column
-        if answer_column not in column_names:
-            raise ValueError(
-                f"--answer_column' value '{data_args.answer_column}' needs to be one of: {', '.join(column_names)}"
-            )
-
     # Temporarily set max_answer_length for training.
     max_answer_length = data_args.max_answer_length
     padding = "max_length" if data_args.pad_to_max_length else False
@@ -363,30 +444,46 @@ def main():
         )
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
-    def preprocess_squad_batch(
+    def preprocess_wikiann_batch(
             examples,
-            question_column: str,
-            context_column: str,
-            answer_column: str,
     ) -> Tuple[List[str], List[str]]:
-        questions = examples[question_column]
-        contexts = examples[context_column]
-        answers = examples[answer_column]
+        """
+        https://github.com/google-research/multilingual-t5/blob/625e1ca79b12299ffb7a4920041b4aa72639522d/multilingual_t5/preprocessors.py#L128
+        {
+          'tokens': ['Sy', 'ander', 'seun', ',', 'Swjatopolk', ',', 'was', 'die',
+                     'resultaat', 'van', '’n', 'buite-egtelike', 'verhouding', '.'],
+          'ner_tags': [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          'langs': ['af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af', 'af'],
+          'spans': ['PER: Swjatopolk']
+        }
 
-        def generate_input(_question, _context):
-            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip()])
+        """
 
-        inputs = [generate_input(question, context) for question, context in zip(questions, contexts)]
-        targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in answers]
+        def generate_input(_tokens):
+            return " ".join(["tag:"] + _tokens)
+
+        def generate_output(_spans, delimiter=' $$ '):
+            if len(_spans) > 0:
+                return delimiter.join(_spans)
+            else:
+                return "None"
+
+        inputs = [generate_input(tokens) for tokens in examples['tokens']]
+        targets = [generate_output(spans) for spans in examples['spans']]
         return inputs, targets
 
     def preprocess_function(examples):
-        inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
-
-        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding=padding, truncation=True)
+        inputs, targets = preprocess_wikiann_batch(examples)
+        model_inputs = tokenizer(
+            inputs,
+            max_length=max_seq_length,
+            padding=padding,
+            truncation=True
+        )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
+            # labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
+            labels = tokenizer(targets, padding=padding)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -400,7 +497,7 @@ def main():
 
     # Validation preprocessing
     def preprocess_validation_function(examples):
-        inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
+        inputs, targets = preprocess_wikiann_batch(examples)
 
         model_inputs = tokenizer(
             inputs,
@@ -412,22 +509,12 @@ def main():
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
-
-        # Since one example might give us several features if it has a long context, we need a map from a feature to
-        # its corresponding example. This key gives us just that.
-        # sample_mapping = model_inputs.pop("overflow_to_sample_mapping")
-        sample_mapping = list(range(len(model_inputs["input_ids"])))
-
-        # For evaluation, we will need to convert our predictions to substrings of the context, so we keep the
-        # corresponding example_id and we will store the offset mappings.
-        model_inputs["example_id"] = []
-
-        for i in range(len(model_inputs["input_ids"])):
-            # One example can give several spans, this is the index of the example containing this span of text.
-            sample_index = sample_mapping[i]
-            model_inputs["example_id"].append(examples["id"][sample_index])
-
+            labels = tokenizer(
+                targets,
+                # max_length=max_answer_length,
+                padding=padding,
+                # truncation=True
+            )
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
         if padding == "max_length" and data_args.ignore_pad_token_for_loss:
@@ -443,7 +530,7 @@ def main():
             raise ValueError("--do_train requires a train dataset")
         train_dataset = raw_datasets["train"]
         if data_args.max_train_samples is not None:
-            # We will select sample from whole data if agument is specified
+            # We will select sample from whole data if argument is specified
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
         # Create train feature from dataset
@@ -515,44 +602,40 @@ def main():
         pad_to_multiple_of=8 if training_args.fp16 else None,
     )
 
-    metric = load_metric("squad_v2" if data_args.version_2_with_negative else "squad")
+    f1_score = load_metric("f1")
 
     def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
+        return f1_score.compute(predictions=p.predictions, references=p.label_ids)
+
+    def tags_to_spans(tag_sequence, delimiter=' $$ '):
+        """Extract spans from IOB1 or BIO tags."""
+        tag_sequence_split = [x.strip() for x in tag_sequence.split(delimiter)]
+        tags_entities = []
+        for tag_entity in tag_sequence_split:
+            tag_entity_split = tag_entity.split(':')
+            if len(tag_entity_split) != 2:
+                continue
+            tag = tag_entity_split[0].strip()
+            entity = tag_entity_split[1].strip()
+            tags_entities.append((tag, entity))
+        return tags_entities
 
     # Post-processing:
     def post_processing_function(
-            examples: datasets.Dataset, features: datasets.Dataset, outputs: EvalLoopOutput, stage="eval"
+            dataset: datasets.Dataset,
+            outputs: EvalLoopOutput,
     ):
         # Decode the predicted tokens.
         preds = outputs.predictions
         if isinstance(preds, tuple):
             preds = preds[0]
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-
-        # Build a map example to its corresponding features.
-        example_id_to_index = {k: i for i, k in enumerate(examples["id"])}
-        feature_per_example = {example_id_to_index[feature["example_id"]]: i for i, feature in enumerate(features)}
-        predictions = {}
-        # Let's loop over all the examples!
-        for example_index, example in enumerate(examples):
-            # This is the index of the feature associated to the current example.
-            feature_index = feature_per_example[example_index]
-            predictions[example["id"]] = decoded_preds[feature_index]
-
-        # Format the result to the format the metric expects.
-        if data_args.version_2_with_negative:
-            formatted_predictions = [
-                {"id": k, "prediction_text": v, "no_answer_probability": 0.0} for k, v in predictions.items()
-            ]
-        else:
-            formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
-
-        references = [{"id": ex["id"], "answers": ex[answer_column]} for ex in examples]
-        return EvalPrediction(predictions=formatted_predictions, label_ids=references)
+        pred_tags = [tags_to_spans(seq) for seq in decoded_preds]
+        references = dataset['spans']
+        return EvalPrediction(predictions=pred_tags, label_ids=references)
 
     # Initialize our Trainer
-    trainer = QuestionAnsweringSeq2SeqTrainer(
+    trainer = NERSeq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -616,17 +699,17 @@ def main():
         trainer.log_metrics("predict", metrics)
         trainer.save_metrics("predict", metrics)
 
-    if training_args.push_to_hub:
-        kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "question-answering"}
-        if data_args.dataset_name is not None:
-            kwargs["dataset_tags"] = data_args.dataset_name
-            if data_args.dataset_config_name is not None:
-                kwargs["dataset_args"] = data_args.dataset_config_name
-                kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
-            else:
-                kwargs["dataset"] = data_args.dataset_name
-
-        trainer.push_to_hub(**kwargs)
+    # if training_args.push_to_hub:
+    #     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "question-answering"}
+    #     if data_args.dataset_name is not None:
+    #         kwargs["dataset_tags"] = data_args.dataset_name
+    #         if data_args.dataset_config_name is not None:
+    #             kwargs["dataset_args"] = data_args.dataset_config_name
+    #             kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
+    #         else:
+    #             kwargs["dataset"] = data_args.dataset_name
+    #
+    #     trainer.push_to_hub(**kwargs)
 
 
 def _mp_fn(index):

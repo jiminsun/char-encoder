@@ -1,47 +1,45 @@
 REPO=$PWD
 MODEL=${1:-google/mt5-base}
 GPU=${2:-0}
+TRAIN_LANG=${3:all}
+
 DATA_DIR=${3:-"$REPO/download/"}
 OUT_DIR=${4:-"$REPO/outputs/"}
 
-TASK=tydiqa
-BATCH_SIZE=4
+TASK=wikiann
+BATCH_SIZE=2
 GRAD_ACC=8
 
-LR=3e-4
-#NUM_EPOCHS=10
-MAX_STEPS=50000
+LR=1e-4
+NUM_EPOCHS=10
+MAXL=1024
+
+if [ "${TRAIN_LANG}" == "all" ]; then
+  CONFIG=multilingual/
+else
+  CONFIG=in_language/${TRAIN_LANG}_
+fi
 
 if [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
-  MODEL_TYPE="mt5"
   MAXL=1024
   MAX_ANSWER_LEN=512
-  DOC_STRIDE=256
 elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
-  MODEL_TYPE="byt5"
   MAXL=4096
   MAX_ANSWER_LEN=512
-  DOC_STRIDE=256
 fi
 
 
-# Model path where trained model should be stored
-MODEL_PATH=$OUT_DIR/$TASK/${MODEL}_LR${LR}_maxlen${MAXL}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}
+MODEL_PATH=$OUT_DIR/${TASK}/${CONFIG}${MODEL}_LR${LR}_EPOCH${NUM_EPOCHS}_batchsize${BATCH_SIZE}_gradacc${GRAD_ACC}
 mkdir -p $MODEL_PATH
 mkdir -p $MODEL_PATH/cache
 
 # train
-CUDA_VISIBLE_DEVICES=$GPU python third_party/run_t5.py \
+CUDA_VISIBLE_DEVICES=$GPU python third_party/run_t5_ner.py \
   --model_name_or_path ${MODEL} \
   --do_train \
-  --dataset_name tydiqa \
-  --dataset_config_name secondary_task \
-  --context_column context \
-  --question_column question \
-  --answer_column answers \
+  --train_lang ${TRAIN_LANG} \
+  --dataset_name ${TASK} \
   --max_seq_length ${MAXL} \
-  --max_answer_length ${MAX_ANSWER_LEN} \
-  --doc_stride ${DOC_STRIDE} \
   --output_dir ${MODEL_PATH} \
   --overwrite_output_dir \
   --overwrite_cache \
@@ -49,11 +47,10 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_t5.py \
   --lr_scheduler_type "constant" \
   --per_device_train_batch_size ${BATCH_SIZE} \
   --gradient_accumulation_steps ${GRAD_ACC} \
-  --max_steps ${MAX_STEPS} \
-  --num_beams 30 \
-  --save_strategy steps --save_steps 2000 \
-  --val_max_answer_length ${MAX_ANSWER_LEN}
-
-
-
-
+  --num_beams 30 --report_to wandb \
+  --max_answer_length ${MAX_ANSWER_LEN} \
+  --save_strategy steps --save_steps 5000 \
+  --max_steps 30000
+#  --num_train_epochs ${NUM_EPOCHS} \
+# --evaluation_strategy steps --eval_steps 5000 \
+# eval while training causes memory error for base models

@@ -195,6 +195,8 @@ class TokenClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         self.task = task
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self._max_length = None
+        self._num_beams = None
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(

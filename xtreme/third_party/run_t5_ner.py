@@ -177,12 +177,6 @@ class NERSeq2SeqTrainer(Seq2SeqTrainer):
 
 
 logger = logging.getLogger(__name__)
-MODEL_CLASSES = {
-    "mt5": (MT5Config, MT5ForConditionalGeneration, MT5Tokenizer),
-    "byt5": (T5Config, T5ForConditionalGeneration, ByT5Tokenizer)
-}
-
-logger = logging.getLogger(__name__)
 
 
 wikiann_column_name_mapping = {

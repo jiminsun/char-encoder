@@ -67,20 +67,12 @@ except ImportError:
     except ImportError:
         _has_tensorboard = False
 
+
 def is_tensorboard_available():
     return _has_tensorboard
 
 
 logger = logging.getLogger(__name__)
-MODEL_CLASSES = {
-    "mt5": (MT5Config, MT5ForConditionalGeneration, MT5Tokenizer),
-    "byt5": (T5Config, T5ForConditionalGeneration, ByT5Tokenizer)
-}
-
-logger = logging.getLogger(__name__)
-
-
-
 
 question_answering_column_name_mapping = {
     "squad_v2": ("question", "context", "answer"),
@@ -159,8 +151,6 @@ class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
             predict_examples,
             ignore_keys=None,
             metric_key_prefix: str = "test",
-            max_length: Optional[int] = None,
-            num_beams: Optional[int] = None,
     ):
         predict_dataloader = self.get_test_dataloader(predict_dataset)
 
@@ -211,16 +201,17 @@ def main():
 
     run_name = [data_args.dataset_name if data_args.dataset_name is not None else args.task]
 
+    if training_args.do_train:
+        run_name += ['train', args.train_lang]
+    if training_args.do_eval or training_args.do_predict:
+        run_name += ['eval', args.eval_lang]
+
     # append model name
     if model_args.model_name_or_path.startswith('google/'):
         model_name = model_args.model_name_or_path[7:]  # strip 'google/'
         run_name.append(model_name)  # canine-s or canine-c
     else:
         run_name.append(model_args.model_name_or_path)
-    if training_args.do_train:
-        run_name += ['train', args.train_lang]
-    if training_args.do_eval or training_args.do_predict:
-        run_name += ['eval', args.eval_lang]
 
     run_name.append(wandb.run.name.split('-')[-1])  # experiment number
     wandb.run.name = '-'.join(run_name)

@@ -87,6 +87,7 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
+        eval_examples=None,
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "eval",
         max_length: Optional[int] = None,
@@ -96,6 +97,7 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
 
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
+        eval_examples = self.eval_examples if eval_examples is None else eval_examples
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
 
         # Temporarily disable metric computation, we will do it in the loop here.
@@ -115,7 +117,7 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
             self.compute_metrics = compute_metrics
 
         if self.post_process_function is not None and self.compute_metrics is not None:
-            eval_preds = self.post_process_function(eval_dataset, output)
+            eval_preds = self.post_process_function(eval_examples, output)
             metrics = self.compute_metrics(eval_preds)
 
             # Prefix all keys with metric_key_prefix + '_'
@@ -156,7 +158,7 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         if self.post_process_function is None or self.compute_metrics is None:
             return output
 
-        predictions = self.post_process_function(predict_dataset, output)
+        predictions = self.post_process_function(predict_examples, output)
         metrics = self.compute_metrics(predictions)
 
         # Prefix all keys with metric_key_prefix + '_'
@@ -223,7 +225,7 @@ class SentClassificationSeq2SeqTrainer(Seq2SeqTrainer):
             self.compute_metrics = compute_metrics
 
         if self.post_process_function is not None and self.compute_metrics is not None:
-            eval_preds = self.post_process_function(eval_dataset, output)
+            eval_preds = self.post_process_function(eval_examples, output)
             metrics = self.compute_metrics(eval_preds)
 
             # Prefix all keys with metric_key_prefix + '_'
@@ -264,7 +266,7 @@ class SentClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         if self.post_process_function is None or self.compute_metrics is None:
             return output
 
-        predictions = self.post_process_function(predict_dataset, output)
+        predictions = self.post_process_function(predict_examples, output)
         metrics = self.compute_metrics(predictions)
 
         # Prefix all keys with metric_key_prefix + '_'
@@ -493,8 +495,6 @@ def main():
             max_length=max_seq_length,
             padding=padding,
             truncation=True,
-            # return_overflowing_tokens=True,
-            return_offsets_mapping=True,
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
@@ -600,7 +600,7 @@ def main():
 
     # Post-processing:
     def post_processing_function(
-            dataset: datasets.Dataset,
+            examples: datasets.Dataset,
             outputs: EvalLoopOutput,
     ):
         # Decode the predicted tokens.
@@ -608,7 +608,8 @@ def main():
         if isinstance(preds, tuple):
             preds = preds[0]
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-        references = dataset['label']
+
+        references = examples['label']
         return EvalPrediction(predictions=decoded_preds, label_ids=references)
 
     # Initialize our Trainer
@@ -654,7 +655,8 @@ def main():
     num_beams = data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate(max_length=max_length, num_beams=num_beams, metric_key_prefix="eval")
+        metrics = trainer.evaluate(eval_dataset, eval_examples,
+                                   max_length=max_length, num_beams=num_beams, metric_key_prefix="eval")
 
         max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))

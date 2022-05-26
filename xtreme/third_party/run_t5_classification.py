@@ -80,6 +80,8 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         self.task = task
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self._max_length = None
+        self._num_beams = None
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(
@@ -154,7 +156,7 @@ class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         if self.post_process_function is None or self.compute_metrics is None:
             return output
 
-        predictions = self.post_process_function(predict_examples, predict_dataset, output.predictions, "predict")
+        predictions = self.post_process_function(predict_dataset, output)
         metrics = self.compute_metrics(predictions)
 
         # Prefix all keys with metric_key_prefix + '_'
@@ -190,6 +192,8 @@ class SentClassificationSeq2SeqTrainer(Seq2SeqTrainer):
         self.task = task
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self._max_length = None
+        self._num_beams = None
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(
@@ -289,7 +293,10 @@ def main():
     # wandb logging
 
     # Wandb experiment name configuration
+    wandb.config.update(args)
     wandb.config.update(model_args)
+    wandb.config.update(training_args)
+    wandb.config.update(data_args)
 
     run_name = [data_args.dataset_name, args.train_lang]
 
@@ -372,7 +379,7 @@ def main():
     else:
         if training_args.do_train:
             lang = args.train_lang
-        elif training_args.do_eval:
+        elif training_args.do_eval or training_args.do_predict:
             lang = args.eval_lang
         raw_datasets = load_dataset(data_args.dataset_name, lang, cache_dir=model_args.cache_dir)
 
@@ -499,9 +506,9 @@ def main():
         with tokenizer.as_target_tokenizer():
             labels = tokenizer(
                 targets,
-                # max_length=max_answer_length,
+                max_length=max_answer_length,
                 padding=padding,
-                # truncation=True
+                truncation=True
             )
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -563,6 +570,7 @@ def main():
         if "test" not in raw_datasets:
             raise ValueError("--do_predict requires a test dataset")
         predict_examples = raw_datasets["test"]
+        print(len(predict_examples))
         if data_args.max_predict_samples is not None:
             # We will select sample from whole data
             predict_examples = predict_examples.select(range(data_args.max_predict_samples))
@@ -674,17 +682,14 @@ def main():
         trainer.log_metrics("predict", metrics)
         trainer.save_metrics("predict", metrics)
 
-    # if training_args.push_to_hub:
-    #     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "question-answering"}
-    #     if data_args.dataset_name is not None:
-    #         kwargs["dataset_tags"] = data_args.dataset_name
-    #         if data_args.dataset_config_name is not None:
-    #             kwargs["dataset_args"] = data_args.dataset_config_name
-    #             kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
-    #         else:
-    #             kwargs["dataset"] = data_args.dataset_name
-    #
-    #     trainer.push_to_hub(**kwargs)
+        map_idx_to_label = {
+            '0': 'entailment',
+            '1': 'neutral',
+            '2': 'contradiction'
+        }
+        with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.txt'), 'w') as f:
+            for pred in results.predictions:
+                print(map_idx_to_label[pred], file=f)
 
 
 def _mp_fn(index):

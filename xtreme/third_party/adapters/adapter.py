@@ -9,7 +9,7 @@ class Adapter(nn.Module):
     ):
         super().__init__()
         self.down_projection = nn.Linear(hidden_size, bottleneck_size)
-        self.activation = nn.ReLU()
+        self.activation = nn.ReLU(inplace=False)
         self.up_projection = nn.Linear(bottleneck_size, hidden_size)
         self.layer_norm = nn.LayerNorm(hidden_size)
 

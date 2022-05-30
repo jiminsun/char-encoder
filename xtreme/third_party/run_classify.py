@@ -128,8 +128,9 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
     {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
   ]
   optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+  warmup_steps = int(args.warmup_steps * t_total)
   scheduler = get_linear_schedule_with_warmup(
-    optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
+    optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
   )
 
   # Check if saved optimizer or scheduler states exist
@@ -245,8 +246,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           wandb.log({
             "train/learning_rate": scheduler.get_lr()[0],
             "train/loss": (tr_loss - logging_loss) / args.logging_steps,
-            "global_step": global_step,
-          })
+          }, step=global_step)
 
           logging_loss = tr_loss
 
@@ -269,11 +269,11 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
                 total_correct += result['correct']
                 wandb.log({
                   f"test/{language}/accuracy": result['acc']
-                })
+                }, step=global_step)
               writer.write('total={}\n'.format(total_correct / total))
               wandb.log({
                 f"test/average/accuracy": total_correct / total
-              })
+              }, step=global_step)
 
           if args.save_only_best_checkpoint:          
             result = evaluate(args, model, tokenizer, split='dev', language=args.train_language, lang2id=lang2id, prefix=str(global_step))
@@ -608,7 +608,7 @@ def main():
     type=int,
     help="If > 0: set total number of training steps to perform. Override num_train_epochs.",
   )
-  parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps.")
+  parser.add_argument("--warmup_steps", default=0.1, type=int, help="Linear warmup over warmup_steps.")
 
   parser.add_argument("--logging_steps", type=int, default=50, help="Log every X updates steps.")
   parser.add_argument("--log_file", default="train", type=str, help="log file")
@@ -658,10 +658,25 @@ def main():
   )
 
   args = parser.parse_args()
-  args.model_prefix = args.model_name_or_path.replace('/', '-')
-
   wandb.config.update(args)
-  wandb.run.name = args.task_name + '-' + wandb.run.name
+
+  run_name = [args.task_name]
+
+  if args.do_train:
+    run_name += ['train', args.train_language]
+  if args.do_eval or args.do_predict:
+    run_name += ['eval', args.predict_languages]
+
+  # append model name
+  if args.model_name_or_path.startswith('google/'):
+    model_name = args.model_name_or_path[7:]  # strip 'google/'
+    run_name.append(model_name)  # canine-s or canine-c
+  else:
+    run_name.append('mbert')
+
+  run_name.append(wandb.run.name.split('-')[-1])  # experiment number
+
+  wandb.run.name = '-'.join(run_name)
 
   if (
     os.path.exists(args.output_dir)
@@ -766,13 +781,6 @@ def main():
         config=config,
         cache_dir=args.cache_dir if args.cache_dir else None,
       )
-
-    if args.model_type == "canine" and args.freeze_embedding:
-      for name, param in model.named_parameters():
-        if 'char_embeddings' in name:
-          logger.info(f"Freezing parameter {name} -- {param.size()}")
-          param.requires_grad = False
-
     model.to(args.device)
     train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)

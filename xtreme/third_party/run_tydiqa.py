@@ -47,7 +47,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from tydiqa.model import CanineTyDiQAModel, BertTyDiQAModel
+from tydiqa.model import CanineTyDiQAModel, BertTyDiQAModel, BertDebugTyDiQAModel
 from tydiqa.metrics import compute_pred_dict
 from tydiqa.postproc import read_candidates_from_one_split
 from tydiqa.char_splitter import CharacterSplitter
@@ -69,8 +69,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {
-    "bert": (BertConfig, BertModel, BertTokenizer),
-    "canine": (CanineConfig, CanineModel, CanineTokenizer),
+    "bert": (BertConfig, BertModel, None),
+    "bert-debug": (BertConfig, BertModel, None),
+    "canine": (CanineConfig, CanineModel, None),
 }
 
 
@@ -667,8 +668,8 @@ def main():
         default=1,
         help="Number of updates steps to accumulate before performing a backward/update pass.",
     )
-    parser.add_argument("--weight_decay", default=0.0, type=float, help="Weight decay if we apply some.")
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer.")
+    parser.add_argument("--weight_decay", default=0.01, type=float, help="Weight decay if we apply some.")
+    parser.add_argument("--adam_epsilon", default=1e-6, type=float, help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
     parser.add_argument(
         "--num_train_epochs", default=1.0, type=float, help="Total number of training epochs to perform."
@@ -816,7 +817,7 @@ def main():
         config.use_lang_emb = True
     if args.model_type == 'canine':
         tokenizer = CharacterSplitter()
-    elif args.model_type == 'bert':
+    elif 'bert' in args.model_type:
         tokenizer = TyDiTokenizer(
             vocab_file=os.path.join(os.getcwd(), 'xtreme/third_party/mbert_modified_vocab.txt'),
             fail_on_mismatch=False,
@@ -838,6 +839,14 @@ def main():
         )
     elif args.model_type == 'bert':
         model = BertTyDiQAModel.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+        )
+    elif args.model_type == 'bert-debug':
+        "Initializing bert debug ..."
+        model = BertDebugTyDiQAModel.from_pretrained(
             args.model_name_or_path,
             from_tf=bool(".ckpt" in args.model_name_or_path),
             config=config,
@@ -899,12 +908,12 @@ def main():
         # Load a trained model and vocabulary that you have fine-tuned
         if args.model_type == 'canine':
             model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
-        elif args.model_type == 'bert':
+        elif 'bert' in args.model_type:
             model = BertTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
 
         if args.model_type == 'canine':
             tokenizer = CharacterSplitter()
-        elif args.model_type == 'bert':
+        elif 'bert' in args.model_type:
             tokenizer = TyDiTokenizer(
                 vocab_file=os.path.join(os.getcwd(), 'xtreme/third_party/mbert_modified_vocab.txt'),
                 fail_on_mismatch=False,
@@ -943,6 +952,8 @@ def main():
                 model = CanineTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
             elif args.model_type == 'bert':
                 model = BertTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
+            elif args.model_type == 'bert-debug':
+                model = BertDebugTyDiQAModel.from_pretrained(args.output_dir, force_download=True)
 
             model.to(args.device)
 
@@ -951,7 +962,8 @@ def main():
             # out_file = os.path.join(args.output_dir, 'predictions.json')
             # with open(out_file, 'w') as f:
             #     json.dump(result, fp=f)
-            output_prediction_file = os.path.join(args.output_dir, f'pred{global_step}.jsonl')
+            output_prediction_file = os.path.join(args.output_dir,
+                                                  f'pred{global_step}_max_len_{args.max_answer_length}.jsonl')
             with open(output_prediction_file, "w") as output_file:
                 for prediction in result.values():
                     output_file.write((json.dumps(prediction) + "\n"))

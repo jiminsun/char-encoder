@@ -106,7 +106,7 @@ MODEL_CLASSES = {
 }
 
 MULTITASK_MODEL_CLASSES = {
-    "canine": (CanineConfig, CanineForQAWithSubwordPrediction, CanineTokenizer),
+    "canine": (CanineConfig, CanineForQAWithSubwordPrediction, CanineTokenizer)
 }
 
 lang2id = TYDIQA_GOLDP_LANGS
@@ -228,15 +228,24 @@ def train(args, train_dataset, model, tokenizer):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
 
-            inputs = {
-                "input_ids": batch[0],
-                "attention_mask": batch[1],
-                "token_type_ids": None if args.model_type in ["xlm", "xlm-roberta", "distilbert"] else batch[2],
-                "start_positions": batch[3],
-                "end_positions": batch[4],
-                "language_id": batch[7],
-                "subword_labels": batch[8]
-            }
+            if args.subword_loss_weight > 0 or args.dynamic_weight:
+                inputs = {
+                    "input_ids": batch[0],
+                    "attention_mask": batch[1],
+                    "token_type_ids": None if args.model_type in ["xlm", "xlm-roberta", "distilbert"] else batch[2],
+                    "start_positions": batch[3],
+                    "end_positions": batch[4],
+                    "language_id": batch[7],
+                    "subword_labels": batch[8]
+                }
+            else:
+                inputs = {
+                    "input_ids": batch[0],
+                    "attention_mask": batch[1],
+                    "token_type_ids": None if args.model_type in ["xlm", "xlm-roberta", "distilbert"] else batch[2],
+                    "start_positions": batch[3],
+                    "end_positions": batch[4],
+                }
 
             if args.model_type in ["xlnet", "xlm"]:
                 inputs.update({"cls_index": batch[5], "p_mask": batch[6]})
@@ -248,13 +257,17 @@ def train(args, train_dataset, model, tokenizer):
             outputs = model(**inputs)
             # model outputs are always tuple in transformers (see doc)
             task_loss = outputs['loss']
-            subword_loss = outputs['subword_loss']
-            # loss, start_logits, end_logits, hidden_states, attentions, subword_loss, subword_logits
-            if args.dynamic_weight:
-                mu = task_loss.item() / subword_loss.item()
+            if args.subword_loss_weight > 0 or args.dynamic_weight:
+                subword_loss = outputs['subword_loss']
+                # loss, start_logits, end_logits, hidden_states, attentions, subword_loss, subword_logits
+                if args.dynamic_weight:
+                    mu = task_loss.item() / subword_loss.item()
+                else:
+                    mu = args.subword_loss_weight
+                loss = task_loss + mu * subword_loss
             else:
-                mu = args.subword_loss_weight
-            loss = task_loss + mu * subword_loss
+                loss = task_loss
+                subword_loss = None
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -264,7 +277,8 @@ def train(args, train_dataset, model, tokenizer):
             loss.backward()
 
             tr_loss += task_loss.item()
-            tr_subword_loss += subword_loss.item()
+            if subword_loss is not None:
+                tr_subword_loss += subword_loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
@@ -275,18 +289,18 @@ def train(args, train_dataset, model, tokenizer):
 
                 # Log metrics
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    # Compute subword prediction scores.
-                    train_subword_results = compute_subword_pred_metrics(
-                        labels=to_list(batch[8].clone().long()),
-                        logits=outputs['subword_logits'].clone().detach().cpu()
-                    )
-
                     wandb.log({
                         "train/learning_rate": scheduler.get_lr()[0],
                         "train/loss": (tr_loss - logging_loss) / args.logging_steps,
                     }, step=global_step)
 
-                    if args.subword_loss_weight > 0:
+                    if subword_loss is not None:
+                        # Compute subword prediction scores.
+                        train_subword_results = compute_subword_pred_metrics(
+                            labels=to_list(batch[8].clone().long()),
+                            logits=outputs['subword_logits'].clone().detach().cpu()
+                        )
+
                         wandb.log({
                             "train/subword_loss": (tr_subword_loss - subword_logging_loss) / args.logging_steps,
                             "train/subword_f1": train_subword_results['f1'],
@@ -361,7 +375,7 @@ def train(args, train_dataset, model, tokenizer):
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, global_step=None):
+def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, global_step=0):
     dataset, examples, features = load_and_cache_examples(args, tokenizer, evaluate=True, output_examples=True,
                                                           language=language, lang2id=lang2id)
 
@@ -389,7 +403,7 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, glo
     start_time = timeit.default_timer()
 
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
-        model.eval()
+        model.to(args.device).eval()
         batch = tuple(t.to(args.device) for t in batch)
 
         with torch.no_grad():
@@ -436,7 +450,10 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, glo
                 )
 
             else:
-                start_logits, end_logits, subword_logits = output
+                if len(output) > 2:
+                    start_logits, end_logits, subword_logits = output
+                else:
+                    start_logits, end_logits = output
                 result = SquadResult(unique_id, start_logits, end_logits)
                 if args.subword_loss_weight > 0 or args.dynamic_weight:
                     all_subword_logits += [subword_logits]
@@ -491,28 +508,18 @@ def evaluate(args, model, tokenizer, prefix="", language='en', lang2id=None, glo
 
     # Compute the F1 and exact scores.
     results = squad_evaluate(examples, predictions)
-    if global_step is not None:
-        wandb.log({
-            f"valid/{args.task_name}-{language}/f1": results['f1'],
-        }, step=int(global_step))
-    else:
-        wandb.log({
-            f"valid/{args.task_name}-{language}/f1": results['f1'],
-        })
+    wandb.log({
+        f"valid/{args.task_name}-{language}/f1": results['f1'],
+    })
 
     # Compute subword prediction scores.
     if args.subword_loss_weight > 0 or args.dynamic_weight:
         subword_results = compute_subword_pred_metrics(labels=all_subword_labels,
                                                        logits=all_subword_logits)
         for metric, score in subword_results.items():
-            if global_step is not None:
-                wandb.log({
-                    f"valid/{args.task_name}-{language}/subword_{metric}": score
-                }, step=int(global_step))
-            else:
-                wandb.log({
-                    f"valid/{args.task_name}-{language}/subword_{metric}": score
-                })
+            wandb.log({
+                f"valid/{args.task_name}-{language}/subword_{metric}": score
+            })
 
     return results
 
@@ -524,7 +531,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         torch.distributed.barrier()
 
     # Load data features from cache or dataset file
-    input_dir = args.data_dir if args.data_dir else "."
+    input_dir = args.data_dir if args.data_dir else "./data_cache"
+    os.makedirs(input_dir, exist_ok=True)
     cached_features_file = os.path.join(
         input_dir,
         "cached_multitask_{}_{}_{}_{}".format(
@@ -536,10 +544,18 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     )
 
     # Init features and dataset from cache if it exists
-    if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
         features_and_dataset = torch.load(cached_features_file)
         features, dataset = features_and_dataset["features"], features_and_dataset["dataset"]
+        processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
+        if evaluate:
+            examples = processor.get_dev_examples(
+                args.data_dir,
+                filename=args.predict_file,
+                language=language,
+                tokenizer=tokenizer
+            )
     else:
         logger.info("Creating features from dataset file at %s", input_dir)
         processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
@@ -808,6 +824,8 @@ def main():
     if 'canine' in args.model_name_or_path:
         model_name = re.findall('canine-[s|c]', args.model_name_or_path)[0]
         run_name.append(model_name)  # canine-s or canine-c
+    elif 'bert' in args.model_name_or_path:
+        run_name.append('mbert')
 
     run_name.append(wandb.run.name.split('-')[-1])  # experiment number
 
@@ -873,7 +891,7 @@ def main():
         config_class, model_class, tokenizer_class = MULTITASK_MODEL_CLASSES[args.model_type]
     else:
         config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-        
+
     config = config_class.from_pretrained(
         args.config_name if args.config_name else args.model_name_or_path,
         cache_dir=args.cache_dir if args.cache_dir else None,

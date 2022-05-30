@@ -22,76 +22,62 @@ OUT_DIR=${5:-"$REPO/outputs/"}
 
 TASK='panx'
 
-export CUDA_VISIBLE_DEVICES=$GPU
-# LANGS=(ar he vi id jv ms tl eu ml ta te af nl en de el bn hi mr ur fa fr it pt es bg ru ja ka ko th sw yo my zh kk tr et fi hu)
-NUM_EPOCHS=10
+# NUM_EPOCHS=10
+MAX_STEPS=5000
 LR=2e-5
 
 LC=""
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
   MAXL=512
-elif [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-mlm-tlm-xnli15-1024" ]; then
-  MODEL_TYPE="xlm"
-  MAXL=512
-  LC=" --do_lower_case"
-elif [ $MODEL == "xlm-roberta-large" ] || [ $MODEL == "xlm-roberta-base" ]; then
-  MODEL_TYPE="xlmr"
-  MAXL=512
 elif [ $MODEL == "google/canine-s" ] || [ $MODEL == "google/canine-c" ]; then
   MODEL_TYPE="canine"
   MAXL=2048
-elif [ $MODEL == "google/mt5-small" ] || [ $MODEL == "google/mt5-base" ] || [ $MODEL == "google/mt5-large" ]; then
-  MODEL_TYPE="mt5"
-  MAXL=1024
-elif [ $MODEL == "google/byt5-small" ] || [ $MODEL == "google/byt5-base" ] || [ $MODEL == "google/byt5-large" ]; then
-  MODEL_TYPE="byt5"
-  MAXL=1024
 fi
 
-if [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-roberta-large" ]; then
-  BATCH_SIZE=2
-  GRAD_ACC=16
-else
-  BATCH_SIZE=8
-  GRAD_ACC=4
-fi
+BATCH_SIZE=8
+GRAD_ACC=4
+
 
 MODEL_PREFIX=$(echo $MODEL | sed "s/\//-/")  # change google/canine-c to google-canine-c
 echo "$MODEL_PREFIX"
 
 SAVE_DIR="$DATA_DIR/${TASK}/${LANG}_${MODEL_PREFIX}_processed_maxlen${MAXL}"
-
 mkdir -p $SAVE_DIR
-python3 $REPO/utils_preprocess.py \
-  --data_dir $DATA_DIR/$TASK/ \
-  --task panx_tokenize \
-  --model_name_or_path $MODEL \
-  --model_prefix $MODEL_PREFIX \
-  --model_type $MODEL_TYPE \
-  --max_len $MAXL \
-  --output_dir $SAVE_DIR \
-  --languages $LANG $LC >> $SAVE_DIR/preprocess.log
-if [ ! -f $SAVE_DIR/labels.txt ]; then
-  cat $SAVE_DIR/*/*.${MODEL_PREFIX} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
+if [ -f "$SAVE_DIR/labels.txt" ]; then
+    echo "preprocessed labels exist"
+else
+    python3 $REPO/utils_preprocess.py \
+      --data_dir $DATA_DIR/$TASK/ \
+      --task panx_tokenize \
+      --model_name_or_path $MODEL \
+      --model_prefix $MODEL_PREFIX \
+      --model_type $MODEL_TYPE \
+      --max_len $MAXL \
+      --output_dir $SAVE_DIR \
+      --languages $LANG $LC >> $SAVE_DIR/preprocess.log
+      cat $SAVE_DIR/*/*.${MODEL_PREFIX} | cut -f 2 | grep -v "^$" | sort | uniq > $SAVE_DIR/labels.txt
 fi
 
-OUTPUT_DIR="$OUT_DIR/${TASK}/${LANG}_${MODEL_PREFIX}-LR${LR}-epoch${NUM_EPOCHS}-MaxLen${MAXL}/"
-
+    
+OUTPUT_DIR="$OUT_DIR/${TASK}/in_language/${LANG}_${MODEL_PREFIX}-LR${LR}-${MAX_STEPS}steps-MaxLen${MAXL}/"
 mkdir -p $OUTPUT_DIR
-python $REPO/third_party/run_tag.py \
+
+CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/run_tag.py \
   --data_dir $SAVE_DIR \
   --model_type $MODEL_TYPE \
+  --task_name $TASK \
+  --train_langs $LANG \
+  --predict_langs $LANG \
   --labels $SAVE_DIR/labels.txt \
   --model_name_or_path $MODEL \
   --output_dir $OUTPUT_DIR \
-  --max_seq_length  $MAXL \
-  --num_train_epochs $NUM_EPOCHS \
+  --max_seq_length $MAXL \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \
   --per_gpu_eval_batch_size 32 \
   --save_steps 1000 \
-  --seed 1 \
+  --logging_steps 50 \
   --learning_rate $LR \
   --do_train \
   --do_eval \
@@ -102,5 +88,5 @@ python $REPO/third_party/run_tag.py \
   --eval_all_checkpoints \
   --eval_patience -1 \
   --overwrite_output_dir \
-  --save_only_best_checkpoint $LC
-
+  --overwrite_cache \
+  --max_steps ${MAX_STEPS} --fp16

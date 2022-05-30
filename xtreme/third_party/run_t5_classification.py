@@ -43,7 +43,9 @@ from datasets import load_dataset, load_metric, concatenate_datasets
 from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments
 
 languages = {
-    'xnli': ['ar', 'bg', 'de', 'el', 'en', 'es', 'fr', 'hi', 'ru', 'sw', 'th', 'tr', 'ur', 'vi', 'zh'],
+    'xnli': ['ar', 'bg', 'de', 'el', 'en',
+             'es', 'fr', 'hi', 'ru', 'sw',
+             'th', 'tr', 'ur', 'vi', 'zh'],
 }
 
 
@@ -453,10 +455,10 @@ def main():
 
         """
         def generate_input(premise, hypothesis):
-            return 'premise: ' + premise + ' hypothesis: ' + hypothesis
+            return 'premise: ' + premise + ' hypothesis: ' + hypothesis + ' </s>'
 
         inputs = [generate_input(p, h) for p, h in zip(examples['premise'], examples['hypothesis'])]
-        targets = [str(x) for x in examples['label']]
+        targets = [str(x) + ' </s>' for x in examples['label']]
         return inputs, targets
 
     def preprocess_function(examples):

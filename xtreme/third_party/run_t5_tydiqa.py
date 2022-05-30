@@ -376,11 +376,10 @@ def main():
         answers = examples[answer_column]
 
         def generate_input(_question, _context):
-            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip(), '</s>'])
+            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip()])
 
         inputs = [generate_input(question, context) for question, context in zip(questions, contexts)]
         targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in answers]
-        targets = [t + ' </s>' for t in targets]
         return inputs, targets
 
     def preprocess_function(examples):
@@ -411,7 +410,7 @@ def main():
             padding=padding,
             truncation=True,
             # return_overflowing_tokens=True,
-            return_offsets_mapping=True,
+            # return_offsets_mapping=True,
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():

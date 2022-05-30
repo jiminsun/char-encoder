@@ -363,13 +363,13 @@ def main():
         """
 
         def generate_input(_tokens):
-            return " ".join(["tag:"] + _tokens)
+            return " ".join(["tag:"] + _tokens) + " </s>"
 
         def generate_output(_spans, delimiter=' $$ '):
             if len(_spans) > 0:
-                return delimiter.join(_spans)
+                return delimiter.join(_spans) + " </s>"
             else:
-                return "None"
+                return "None </s>"
 
         inputs = [generate_input(tokens) for tokens in examples['tokens']]
         targets = [generate_output(spans) for spans in examples['spans']]
@@ -601,18 +601,6 @@ def main():
 
         trainer.log_metrics("predict", metrics)
         trainer.save_metrics("predict", metrics)
-
-    # if training_args.push_to_hub:
-    #     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "question-answering"}
-    #     if data_args.dataset_name is not None:
-    #         kwargs["dataset_tags"] = data_args.dataset_name
-    #         if data_args.dataset_config_name is not None:
-    #             kwargs["dataset_args"] = data_args.dataset_config_name
-    #             kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
-    #         else:
-    #             kwargs["dataset"] = data_args.dataset_name
-    #
-    #     trainer.push_to_hub(**kwargs)
 
 
 def _mp_fn(index):

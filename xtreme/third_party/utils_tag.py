@@ -21,7 +21,7 @@ from __future__ import absolute_import, division, print_function
 import logging
 import os
 from io import open
-from transformers import XLMTokenizer
+from transformers import XLMTokenizer, CanineTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class InputFeatures(object):
 
 def read_examples_from_file(file_path, lang, lang2id=None):
   if not os.path.exists(file_path):
-    logger.info("[Warming] file {} not exists".format(file_path))
+    logger.info("[Warning] file {} not exists".format(file_path))
     return []
   guid_index = 1
   examples = []
@@ -138,6 +138,8 @@ def convert_examples_to_features(examples,
     for word, label in zip(example.words, example.labels):
       if isinstance(tokenizer, XLMTokenizer):
         word_tokens = tokenizer.tokenize(word, lang=lang)
+      elif isinstance(tokenizer, CanineTokenizer):
+        word_tokens = tokenizer.tokenize(word + ' ')
       else:
         word_tokens = tokenizer.tokenize(word)
       if len(word) != 0 and len(word_tokens) == 0:

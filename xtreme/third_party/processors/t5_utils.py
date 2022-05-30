@@ -8,7 +8,6 @@ class UserArguments:
     Additional arguments
     """
     task: Optional[str] = field(
-        default='wikiann',
         metadata={'help': 'task name'}
     )
 

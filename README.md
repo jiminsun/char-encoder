@@ -11,22 +11,17 @@ Follow the steps described in `./xtreme` and run `./xtreme/scripts/download_data
 ## Training
 ### Single language training
 ```
-# mBERT, CANINE-S, CANINE-C
 cd xtreme
 bash in_language_finetuning.sh $MODEL $TASK $GPU
 ```
-* `$MODEL` is either `bert-multilingual-base-cased`, `google/canine-s`, or `google/canine-c`
+* `$MODEL` is either `bert-multilingual-base-cased`, `google/canine-s`, `google/canine-c`, `google/mt5-small`, or `google/byt5-small`
+ * For larger t5 style models, change `small` to `base` or `large`
 * `$TASK` is either `tydiqa`, `xnli`, or `panx`
 
-```
-# mT5 or ByT5 models
-cd xtreme
-bash t5_in_language_finetuning.sh $MODEL $TASK $GPU
-```
-* `$MODEL` is either `google/mt5-small` or `google/byt5-small`
-  * For larger models, change `small` to `base` or `large`
 
 ### Multilingual training (multitasking)
+#### mBERT, CANINE models
+
 ```
 cd xtreme 
 # tydiqa

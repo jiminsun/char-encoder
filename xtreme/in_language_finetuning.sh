@@ -11,6 +11,8 @@ GPU=${3:-0}
 DATA_DIR=${4:-"$REPO/download/"}
 OUT_DIR=${5:-"$REPO/outputs/"}
 
+# MODELS=( "bert-base-multilingual-cased" "google/canine-s" "google/canine-c" )
+# MODELS=( "google/mt5-small" "google/byt5-small" )
 
 if [ $TASK == 'tydiqa' ]; then
   LANGS=( "en" "ko" "sw" "ar" "bn" "fi" "id" "ru" "te" )
@@ -20,12 +22,12 @@ elif [ $TASK == 'panx' ]; then
   LANGS=( "en" "hi" "bn" "ur" "sw" "ar" "de" "el" "es" "fi" "fr" "ko" "ru" "te" "zh" "tr" "ta" "id" )
 fi
 
-
-MODELS=( "bert-base-multilingual-cased" "google/canine-s" "google/canine-c" )
-
-
 for LANG in "${LANGS[@]}"; do
   echo "Fine-tuning $MODEL on $TASK using GPU $GPU"
   echo "Load data from $DATA_DIR, and save models to $OUT_DIR"
-  bash $REPO/scripts/finetune_${TASK}.sh $MODEL $LANG $GPU $DATA_DIR $OUT_DIR
+  if [ $MODEL == 'bert-base-multilingual-cased' ] || [ $MODEL == 'google/canine-s' ] || [ $MODEL == 'google/canine-c' ]; then
+    bash $REPO/scripts/finetune_${TASK}.sh $MODEL $LANG $GPU $DATA_DIR $OUT_DIR
+  else
+    bash $REPO/t5_scripts/train_${TASK}.sh $MODEL $GPU $LANG $LANG $DATA_DIR $OUT_DIR
+  fi
 done

@@ -385,10 +385,10 @@ def main():
     def preprocess_function(examples):
         inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
 
-        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding=padding, truncation=True)
+        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding='longest', truncation=True)
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding='longest', truncation=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -407,14 +407,14 @@ def main():
         model_inputs = tokenizer(
             inputs,
             max_length=max_seq_length,
-            padding=padding,
+            padding="longest",
             truncation=True,
             # return_overflowing_tokens=True,
             # return_offsets_mapping=True,
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding='longest', truncation=True)
 
         # Since one example might give us several features if it has a long context, we need a map from a feature to
         # its corresponding example. This key gives us just that.

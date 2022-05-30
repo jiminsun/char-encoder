@@ -380,13 +380,13 @@ def main():
         model_inputs = tokenizer(
             inputs,
             max_length=max_seq_length,
-            padding=padding,
+            padding=True,
             truncation=True
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
             # labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
-            labels = tokenizer(targets, padding=padding)
+            labels = tokenizer(targets, padding=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -405,7 +405,7 @@ def main():
         model_inputs = tokenizer(
             inputs,
             max_length=max_seq_length,
-            padding=padding,
+            padding=True,
             truncation=True,
             # return_overflowing_tokens=True,
             return_offsets_mapping=True,
@@ -415,8 +415,8 @@ def main():
             labels = tokenizer(
                 targets,
                 # max_length=max_answer_length,
-                padding=padding,
-                # truncation=True
+                padding=True,
+                truncation=True
             )
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.

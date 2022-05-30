@@ -54,7 +54,7 @@ python $REPO/third_party/run_tag.py \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \
   --per_gpu_eval_batch_size 32 \
-  --save_steps 10000 \
+  --save_steps 1000 \
   --warmup_steps 0.1 \
   --learning_rate $LR \
   --do_train \

@@ -351,7 +351,7 @@ def get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
 
 def _get_best_indexes(logits, n_best_size):
     """Get the n-best logits from a list."""
-    index_and_score = sorted(enumerate(logits), key=lambda x: x[1], reverse=True)
+    index_and_score = sorted(enumerate(logits[1:], 1), key=lambda x: x[1], reverse=True)
 
     best_indexes = []
     for i in range(len(index_and_score)):
@@ -518,6 +518,7 @@ def compute_pred_dict(
     max_answer_length,
     threads,
 ):
+    # https://github.com/google-research-datasets/tydiqa/blob/43cde6d598c1cf88c1a8b9ed32e89263ffb5e03b/baseline/postproc.py#L183
     logger.info("Post-processing predictions started.")
 
     raw_results_by_id = [(int(res.unique_id + 1), res) for res in raw_results]

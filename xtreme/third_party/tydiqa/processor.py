@@ -584,6 +584,7 @@ class TyDiProcessor(DataProcessor):
     def get_train_examples(
             self,
             data_dir,
+            splitter,
             filename=None,
             max_passages=45,
             max_position=45,
@@ -607,7 +608,6 @@ class TyDiProcessor(DataProcessor):
         ) as reader:
             input_data = [json.loads(line) for line in reader]
 
-        splitter = char_splitter.CharacterSplitter()
         entries = [preproc.create_entry_from_json(json_elem,
                                                   splitter,
                                                   max_passages=max_passages,
@@ -618,6 +618,7 @@ class TyDiProcessor(DataProcessor):
     def get_dev_examples(
             self,
             data_dir,
+            splitter,
             filename=None,
             max_passages=45,
             max_position=45,
@@ -640,7 +641,6 @@ class TyDiProcessor(DataProcessor):
         ) as reader:
             input_data = [json.loads(line) for line in reader]
 
-        splitter = char_splitter.CharacterSplitter()
         entries = [preproc.create_entry_from_json(json_elem,
                                                   splitter,
                                                   max_passages=max_passages,

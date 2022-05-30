@@ -53,7 +53,6 @@ SPECIAL_CODEPOINTS_BY_NAME: Dict[Text, int] = {
 }
 
 
-
 class CharacterSplitter(tydi_tokenization_interface.TokenizerWithOffsets):
   """A character splitter that preserves byte offsets.
 

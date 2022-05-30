@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Text, Tuple
 from absl import logging
 import tydiqa.data as data
 import tydiqa.tydi_tokenization_interface as tydi_tokenization_interface
+from tydiqa.tydi_char_splitter import CharacterSplitter
 
 
 def create_entry_from_json(
@@ -158,12 +159,12 @@ def create_entry_from_json(
 
   # Add a passage answer if one was found
   elif annotation and annotation["passage_answer"]["candidate_index"] >= 0:
-    if ignore_yes_no_answer:
-      answer["input_text"] = "passage"
-    elif annotation["yes_no_answer"] not in ("YES", "NO"):
+    # if ignore_yes_no_answer:
+    #   answer["input_text"] = "passage"
+    # elif annotation["yes_no_answer"] not in ("YES", "NO"):
       # If yes/no answer is added in the input text, keep it. Otherwise,
       # set the answer input text to passage.
-      answer["input_text"] = "passage"
+    answer["input_text"] = "passage"
     answer["span_text"] = data.get_candidate_text(json_dict, annotated_idx).text
     answer["span_start"] = 0
     answer["span_end"] = data.byte_len(answer["span_text"])
@@ -205,7 +206,10 @@ def create_entry_from_json(
   offset = 0
   context_to_plaintext_offset = []
   for idx, context in zip(context_idxs, context_list):
-    special_token = tokenizer.get_passage_marker(context["id"])
+    if isinstance(tokenizer, CharacterSplitter):
+      special_token = tokenizer.get_passage_marker(context["id"])
+    else:
+      special_token = "[ContextId={}]".format(context["id"])
     all_contexts_with_tokens.append(special_token)
     context_to_plaintext_offset.append([-1] * data.byte_len(special_token))
     # Account for the special token and its trailing space (due to the join
@@ -435,6 +439,7 @@ def convert_single_example(
   features = []
 
   question_wordpieces = tokenizer.tokenize(tydi_example.question)
+  question_wordpieces.insert(0, "[Q]")  # Inserts the special question marker in front of the question.
   # `tydi_example.contexts` includes the entire document (article) worth of
   # candidate passages concatenated with special tokens such as '[ContextId=0]'.
   all_doc_wp, contexts_start_offsets, contexts_end_offsets, offset_to_wp = (
@@ -466,8 +471,7 @@ def convert_single_example(
   if len(question_wordpieces) > max_question_length:
     # Keeps only the last `max_question_length` wordpieces of the question.
     question_wordpieces = question_wordpieces[-max_question_length:]
-  # Inserts the special question marker in front of the question.
-  question_wordpieces.insert(0, tokenizer.get_vocab_id("[Q]"))
+
   if debug_info is not None:
     debug_info["query_wp_ids"] = question_wordpieces
 

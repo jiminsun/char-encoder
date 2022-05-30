@@ -56,7 +56,6 @@ mkdir -p $MODEL_PATH
 TASK_DATA_DIR=${DATA_DIR}/tydiqa
 TRAIN_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-train/tydiqa.${LANG}.train.json
 PREDICT_FILE=${TASK_DATA_DIR}/tydiqa-goldp-v1.1-dev/tydiqa.${LANG}.dev.json
-# tydiqa.en.train.json
 
 # train
 CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \
@@ -76,7 +75,7 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_squad.py \
   --max_query_length ${MAX_QUERY_LEN} \
   --max_answer_length ${MAX_ANSWER_LEN} \
   --doc_stride ${DOC_STRIDE} \
-  --save_steps 200 \
+  --save_steps 1000 \
   --overwrite_output_dir \
   --gradient_accumulation_steps ${GRAD_ACC} \
   --warmup_steps 0.1 \

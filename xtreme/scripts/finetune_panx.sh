@@ -22,8 +22,8 @@ OUT_DIR=${5:-"$REPO/outputs/"}
 
 TASK='panx'
 
-# NUM_EPOCHS=10
-MAX_STEPS=5000
+NUM_EPOCHS=10
+#MAX_STEPS=5000
 LR=2e-5
 
 LC=""
@@ -72,7 +72,8 @@ CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/run_tag.py \
   --labels $SAVE_DIR/labels.txt \
   --model_name_or_path $MODEL \
   --output_dir $OUTPUT_DIR \
-  --max_seq_length $MAXL \
+  --max_seq_length  $MAXL \
+  --num_train_epochs $NUM_EPOCHS \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \
   --per_gpu_eval_batch_size 32 \
@@ -88,5 +89,4 @@ CUDA_VISIBLE_DEVICES=$GPU python $REPO/third_party/run_tag.py \
   --eval_all_checkpoints \
   --eval_patience -1 \
   --overwrite_output_dir \
-  --overwrite_cache \
-  --max_steps ${MAX_STEPS} --fp16
+  --overwrite_cache --fp16

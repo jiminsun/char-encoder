@@ -135,11 +135,17 @@ class CanineMultilingualAdapterTyDiQAModel(CanineAdapterTyDiQAModel):
 
 
 class CanineMultilingualAdapterForQuestionAnswering(CanineForQuestionAnswering):
-    def __init__(self, config, adapter, bottleneck_size, lang2id):
+    def __init__(self, config, adapter, bottleneck_size, adapter_location, lang2id):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.canine = CanineMultilingualAdapterModel(config, adapter, bottleneck_size, lang2id)
+        self.canine = CanineMultilingualAdapterModel(
+            config=config,
+            adapter=adapter,
+            bottleneck_size=bottleneck_size,
+            adapter_location=adapter_location,
+            lang2id=lang2id
+        )
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
@@ -222,7 +228,8 @@ class CanineMultilingualAdapterForQuestionAnswering(CanineForQuestionAnswering):
 
 
 class CanineMultilingualAdapterModel(CanineModel):
-    def __init__(self, config, adapter, bottleneck_size, lang2id, add_pooling_layer=True):
+    def __init__(self, config, adapter, bottleneck_size, adapter_location='initial',
+                 lang2id=None, add_pooling_layer=True):
         super().__init__(config)
         shallow_config = copy.deepcopy(config)
         shallow_config.num_hidden_layers = 1
@@ -230,26 +237,46 @@ class CanineMultilingualAdapterModel(CanineModel):
         self.char_embeddings = CanineEmbeddings(config)
 
         # shallow/low-dim transformer encoder to get a initial character encoding
-        self.initial_char_encoder = CanineEncoderWithMultilingualAdapter(
-            shallow_config,
-            local=True,
-            always_attend_to_first_position=False,
-            first_position_attends_to_all=False,
-            attend_from_chunk_width=config.local_transformer_stride,
-            attend_from_chunk_stride=config.local_transformer_stride,
-            attend_to_chunk_width=config.local_transformer_stride,
-            attend_to_chunk_stride=config.local_transformer_stride,
-            adapter=adapter,
-            bottleneck_size=bottleneck_size,
-            lang2id=lang2id,
-        )
+        if adapter_location == 'initial':
+            self.initial_char_encoder = CanineEncoderWithMultilingualAdapter(
+                shallow_config,
+                local=True,
+                always_attend_to_first_position=False,
+                first_position_attends_to_all=False,
+                attend_from_chunk_width=config.local_transformer_stride,
+                attend_from_chunk_stride=config.local_transformer_stride,
+                attend_to_chunk_width=config.local_transformer_stride,
+                attend_to_chunk_stride=config.local_transformer_stride,
+                adapter=adapter,
+                bottleneck_size=bottleneck_size,
+                lang2id=lang2id,
+            )
+        else:
+            self.initial_char_encoder = CanineEncoder(
+                shallow_config,
+                local=True,
+                always_attend_to_first_position=False,
+                first_position_attends_to_all=False,
+                attend_from_chunk_width=config.local_transformer_stride,
+                attend_from_chunk_stride=config.local_transformer_stride,
+                attend_to_chunk_width=config.local_transformer_stride,
+                attend_to_chunk_stride=config.local_transformer_stride,
+            )
 
         self.chars_to_molecules = CharactersToMolecules(config)
         # deep transformer encoder
         self.encoder = CanineEncoder(config)
         self.projection = ConvProjection(config)
         # shallow/low-dim transformer encoder to get a final character encoding
-        self.final_char_encoder = CanineEncoder(shallow_config)
+        if adapter_location == 'final':
+            self.final_char_encoder = CanineEncoderWithMultilingualAdapter(
+                shallow_config,
+                adapter=adapter,
+                bottleneck_size=bottleneck_size,
+                lang2id=lang2id
+            )
+        else:
+            self.final_char_encoder = CanineEncoder(shallow_config)
 
         self.pooler = CaninePooler(config) if add_pooling_layer else None
 
@@ -591,12 +618,12 @@ class CanineLayerWithMultilingualAdapter(nn.Module):
 
         if self.adapter_loc == 'feedforward':
             # sequential adapter
-            adapter_output = torch.cat([self.adapter_modules[lang](layer_output[idx, :])
-                                        for idx, lang in enumerate(language_names)], dim=0)
+            adapter_output = torch.stack([self.adapter_modules[lang](layer_output[idx, :])
+                                          for idx, lang in enumerate(language_names)], dim=0)
             layer_output = layer_output + adapter_output
         elif self.adapter_loc == 'parallel_feedforward':
-            adapter_output = torch.cat([self.adapter_modules[lang](attention_output[idx, :])
-                                        for idx, lang in enumerate(language_names)], dim=0)
+            adapter_output = torch.stack([self.adapter_modules[lang](attention_output[idx, :])
+                                          for idx, lang in enumerate(language_names)], dim=0)
             layer_output = layer_output + adapter_output
 
         outputs = (layer_output,) + outputs

@@ -64,6 +64,7 @@ python $REPO/third_party/run_tag.py \
   --model_type $MODEL_TYPE \
   --labels $DATA_DIR/labels.txt \
   --model_name_or_path $MODEL \
+  --task_name $TASK \
   --output_dir $OUTPUT_DIR \
   --max_seq_length  $MAXL \
   --num_train_epochs $NUM_EPOCHS \
@@ -71,6 +72,7 @@ python $REPO/third_party/run_tag.py \
   --per_gpu_train_batch_size $BATCH_SIZE \
   --per_gpu_eval_batch_size 32 \
   --save_steps 1000 \
+  --warmup_steps 0.1 \
   --seed 1 \
   --learning_rate $LR \
   --do_train \

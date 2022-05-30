@@ -23,9 +23,9 @@ export CUDA_VISIBLE_DEVICES=$GPU
 
 TASK='xnli'
 LR=2e-5
-EPOCH=5
-#MAXL=128
-LANGS="ar,bg,de,el,en,es,fr,hi,ru,sw,th,tr,ur,vi,zh"
+EPOCH=3
+
+LANGS="all"
 LC=""
 if [ $MODEL == "bert-base-multilingual-cased" ]; then
   MODEL_TYPE="bert"
@@ -55,21 +55,24 @@ if [ $MODEL == "xlm-mlm-100-1280" ] || [ $MODEL == "xlm-roberta-large" ]; then
   LR=3e-5
 else
   BATCH_SIZE=8
-  GRAD_ACC=4
+  GRAD_ACC=2
   LR=2e-5
 fi
 
-SAVE_DIR="$OUT_DIR/$TASK/${MODEL}-LR${LR}-epoch${EPOCH}-MaxLen${MAXL}/"
+SAVE_DIR="$OUT_DIR/$TASK/multilingual/${MODEL}-LR${LR}-epoch${EPOCH}-MaxLen${MAXL}/"
 mkdir -p $SAVE_DIR
 
-python $PWD/third_party/run_classify.py \
+CUDA_VISIBLE_DEVICES=$GPU python $PWD/third_party/run_classify.py \
   --model_type $MODEL_TYPE \
   --model_name_or_path $MODEL \
-  --train_language en \
+  --train_language $LANGS \
+  --predict_languages en \
   --task_name $TASK \
   --do_train \
   --do_eval \
   --do_predict \
+  --overwrite_cache \
+  --overwrite_output_dir \
   --data_dir $DATA_DIR/${TASK} \
   --gradient_accumulation_steps $GRAD_ACC \
   --per_gpu_train_batch_size $BATCH_SIZE \
@@ -77,10 +80,8 @@ python $PWD/third_party/run_classify.py \
   --num_train_epochs $EPOCH \
   --max_seq_length $MAXL \
   --output_dir $SAVE_DIR/ \
-  --save_steps 100 \
+  --save_steps 5000 --logging_steps 100 \
   --eval_all_checkpoints \
   --log_file 'train' \
-  --predict_languages $LANGS \
   --save_only_best_checkpoint \
-  --overwrite_output_dir \
-  --eval_test_set $LC
+  --eval_test_set --fp16

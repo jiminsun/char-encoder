@@ -226,33 +226,54 @@ class CanineEncoderWithAdapter(CanineEncoder):
 
     
 class CanineAdapterModel(CanineModel):
-    def __init__(self, config, adapter, bottleneck_size, add_pooling_layer=True):
+    def __init__(self, config, adapter, bottleneck_size, adapter_location='initial', add_pooling_layer=True):
         super().__init__(config)
         shallow_config = copy.deepcopy(config)
         shallow_config.num_hidden_layers = 1
         # TODO: add embedding adapters
         self.char_embeddings = CanineEmbeddings(config)
 
+        assert adapter_location in ['initial', 'final']
+
         # shallow/low-dim transformer encoder to get a initial character encoding
-        self.initial_char_encoder = CanineEncoderWithAdapter(
-            shallow_config,
-            local=True,
-            always_attend_to_first_position=False,
-            first_position_attends_to_all=False,
-            attend_from_chunk_width=config.local_transformer_stride,
-            attend_from_chunk_stride=config.local_transformer_stride,
-            attend_to_chunk_width=config.local_transformer_stride,
-            attend_to_chunk_stride=config.local_transformer_stride,
-            adapter=adapter,
-            bottleneck_size=bottleneck_size,
-        )
+        if adapter_location == 'initial':
+            self.initial_char_encoder = CanineEncoderWithAdapter(
+                shallow_config,
+                local=True,
+                always_attend_to_first_position=False,
+                first_position_attends_to_all=False,
+                attend_from_chunk_width=config.local_transformer_stride,
+                attend_from_chunk_stride=config.local_transformer_stride,
+                attend_to_chunk_width=config.local_transformer_stride,
+                attend_to_chunk_stride=config.local_transformer_stride,
+                adapter=adapter,
+                bottleneck_size=bottleneck_size,
+            )
+        else:
+            self.initial_char_encoder = CanineEncoder(
+                shallow_config,
+                local=True,
+                always_attend_to_first_position=False,
+                first_position_attends_to_all=False,
+                attend_from_chunk_width=config.local_transformer_stride,
+                attend_from_chunk_stride=config.local_transformer_stride,
+                attend_to_chunk_width=config.local_transformer_stride,
+                attend_to_chunk_stride=config.local_transformer_stride,
+            )
 
         self.chars_to_molecules = CharactersToMolecules(config)
         # deep transformer encoder
         self.encoder = CanineEncoder(config)
         self.projection = ConvProjection(config)
         # shallow/low-dim transformer encoder to get a final character encoding
-        self.final_char_encoder = CanineEncoder(shallow_config)
+        if adapter_location == 'final':
+            self.final_char_encoder = CanineEncoderWithAdapter(
+                shallow_config,
+                adapter=adapter,
+                bottleneck_size=bottleneck_size
+            )
+        else:
+            self.final_char_encoder = CanineEncoder(shallow_config)
 
         self.pooler = CaninePooler(config) if add_pooling_layer else None
 

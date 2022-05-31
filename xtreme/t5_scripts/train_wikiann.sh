@@ -10,7 +10,7 @@ TASK=wikiann
 BATCH_SIZE=2
 GRAD_ACC=8
 
-LR=1e-4
+LR=3e-4
 NUM_EPOCHS=10
 MAXL=1024
 
@@ -43,6 +43,7 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_t5_ner.py \
   --output_dir ${MODEL_PATH} \
   --overwrite_output_dir \
   --overwrite_cache \
+  --optim adafactor \
   --learning_rate ${LR} \
   --lr_scheduler_type "constant" \
   --per_device_train_batch_size ${BATCH_SIZE} \

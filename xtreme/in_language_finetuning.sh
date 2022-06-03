@@ -19,7 +19,7 @@ if [ $TASK == 'tydiqa' ]; then
 elif [ $TASK == 'xnli' ]; then
   LANGS=( "ar" "en" "bg" "de" "el" "es" "fr" "hi" "ru" "sw" "th" "tr" "ur" "vi" "zh" )
 elif [ $TASK == 'panx' ]; then
-  LANGS=( "en" "hi" "bn" "ur" "sw" "ar" "de" "el" "es" "fi" "fr" "ko" "ru" "te" "zh" "tr" "ta" "id" )
+  LANGS=( "en" "ar" "bn" "de" "el" "es" "fi" "fr" "hi" "id" "ja" "ko" "ru" "sw" "ta" "te" "th" "tr" "ur" "zh" )
 fi
 
 for LANG in "${LANGS[@]}"; do

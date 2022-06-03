@@ -4,4 +4,4 @@ GPU=${3:-0}
 
 REPO=$PWD
 
-bash $REPO/t5_scripts/test_${TASK}.sh all $GPU 
+bash $REPO/t5_scripts/test_${TASK}.sh all $GPU

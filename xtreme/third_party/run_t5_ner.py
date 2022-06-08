@@ -529,21 +529,23 @@ def main():
 
         for gold_spans, pred_spans in zip(p.label_ids, p.predictions):
             for span in pred_spans:
+                tag_name = span.split(': ')[0]
                 if span in gold_spans:
-                    true_positives[span[0]] += 1
+                    true_positives[tag_name] += 1
                     gold_spans.remove(span)
                 else:
-                    false_positives[span[0]] += 1
+                    false_positives[tag_name] += 1
             # These spans weren't predicted.
             for span in gold_spans:
-                false_negatives[span[0]] += 1
+                tag_name = span.split(': ')[0]
+                false_negatives[tag_name] += 1
 
         _, _, f1_measure = compute_f1_metrics(
             sum(true_positives.values()), sum(false_positives.values()),
             sum(false_negatives.values()))
 
         # return f1_score.compute(predictions=p.predictions, references=p.label_ids)
-        return {'span_f1': f1_measure}
+        return {f'{args.eval_lang}_span_f1': f1_measure}
 
     def tags_to_spans(tag_sequence, delimiter=' $$ '):
         """Extract spans from IOB1 or BIO tags."""
@@ -637,6 +639,13 @@ def main():
 
         trainer.log_metrics("predict", metrics)
         trainer.save_metrics("predict", metrics)
+
+        with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.txt'), 'w') as f:
+            for pred in results.predictions:
+                print(pred, file=f)
+
+        with open(os.path.join(training_args.output_dir, 'scores.txt'), 'a') as f:
+            print(f"{args.eval_lang}", metrics, file=f)
 
 
 def _mp_fn(index):

@@ -6,6 +6,7 @@ wandb.init(project="t5", entity="jiminsun")
 import logging
 import os
 import sys
+import collections
 from typing import Dict, List, Optional, Tuple
 
 from torch.utils.data import Dataset
@@ -82,6 +83,9 @@ class NERSeq2SeqTrainer(Seq2SeqTrainer):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self._max_length = None
+        self._num_beams = None
+
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(
@@ -109,8 +113,8 @@ class NERSeq2SeqTrainer(Seq2SeqTrainer):
                 eval_dataloader,
                 description="Evaluation",
                 # No point gathering the predictions if there are no metrics, otherwise we defer to
-                # self.args.prediction_loss_only
-                prediction_loss_only=True if compute_metrics is None else None,
+                prediction_loss_only=self.args.prediction_loss_only,
+                # prediction_loss_only=True if compute_metrics is None else None,
                 ignore_keys=ignore_keys,
             )
         finally:
@@ -257,7 +261,7 @@ def main():
     # download the dataset.
     assert data_args.dataset_name is not None
     # Downloading and loading a dataset from the hub.
-    if args.train_lang == 'all':
+    if training_args.do_train and args.train_lang == 'all':
         langs = languages[data_args.dataset_name]
         lang_datasets = [load_dataset(data_args.dataset_name, l, cache_dir=model_args.cache_dir) for l in langs]
         train_datasets = concatenate_datasets(
@@ -274,8 +278,11 @@ def main():
             'validation': validation_datasets,
             'test': test_datasets
         }
-    else:
+    elif training_args.do_train:
         raw_datasets = load_dataset(data_args.dataset_name, args.train_lang, cache_dir=model_args.cache_dir)
+    elif training_args.do_eval or training_args.do_predict:
+        raw_datasets = load_dataset(data_args.dataset_name, args.eval_lang, cache_dir=model_args.cache_dir)
+
 
     # Load pretrained model and tokenizer
     #
@@ -353,8 +360,8 @@ def main():
 
         """
 
-        def generate_input(_tokens):
-            return " ".join(["tag:"] + _tokens) + " </s>"
+        def generate_input(_tokens, sep=' '):
+            return sep.join(["tag:"] + _tokens) + " </s>"
 
         def generate_output(_spans, delimiter=' $$ '):
             if len(_spans) > 0:
@@ -362,7 +369,12 @@ def main():
             else:
                 return "None </s>"
 
-        inputs = [generate_input(tokens) for tokens in examples['tokens']]
+        if examples['langs'][0] in ['th', 'zh', 'ja']:
+            sep = ''
+        else:
+            sep = ' '
+
+        inputs = [generate_input(tokens, sep=sep) for tokens in examples['tokens']]
         targets = [generate_output(spans) for spans in examples['spans']]
         return inputs, targets
 
@@ -376,8 +388,8 @@ def main():
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            # labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
-            labels = tokenizer(targets, padding=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
+            # labels = tokenizer(targets, padding=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -399,13 +411,13 @@ def main():
             padding=True,
             truncation=True,
             # return_overflowing_tokens=True,
-            return_offsets_mapping=True,
+            # return_offsets_mapping=True,
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
             labels = tokenizer(
                 targets,
-                # max_length=max_answer_length,
+                max_length=max_answer_length,
                 padding=True,
                 truncation=True
             )
@@ -482,6 +494,7 @@ def main():
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on prediction dataset",
             )
+            logger.info(f'predict samples {len(predict_dataset)}')
         if data_args.max_predict_samples is not None:
             # During Feature creation dataset samples might increase, we will select required samples again
             max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
@@ -498,21 +511,53 @@ def main():
 
     f1_score = load_metric("f1")
 
+    def compute_f1_metrics(true_positives, false_positives, false_negatives):
+        precision = float(true_positives) / float(true_positives + false_positives +
+                                                  1e-13)
+        recall = float(true_positives) / float(true_positives + false_negatives +
+                                               1e-13)
+        f1_measure = 2. * ((precision * recall) / (precision + recall + 1e-13))
+        return precision, recall, f1_measure
+
+
     def compute_metrics(p: EvalPrediction):
-        return f1_score.compute(predictions=p.predictions, references=p.label_ids)
+        # labels = [[s.split(': ') for s in label] for label in p.label_ids]
+
+        true_positives = collections.defaultdict(int)
+        false_positives = collections.defaultdict(int)
+        false_negatives = collections.defaultdict(int)
+
+        for gold_spans, pred_spans in zip(p.label_ids, p.predictions):
+            for span in pred_spans:
+                if span in gold_spans:
+                    true_positives[span[0]] += 1
+                    gold_spans.remove(span)
+                else:
+                    false_positives[span[0]] += 1
+            # These spans weren't predicted.
+            for span in gold_spans:
+                false_negatives[span[0]] += 1
+
+        _, _, f1_measure = compute_f1_metrics(
+            sum(true_positives.values()), sum(false_positives.values()),
+            sum(false_negatives.values()))
+
+        # return f1_score.compute(predictions=p.predictions, references=p.label_ids)
+        return {'span_f1': f1_measure}
 
     def tags_to_spans(tag_sequence, delimiter=' $$ '):
         """Extract spans from IOB1 or BIO tags."""
         tag_sequence_split = [x.strip() for x in tag_sequence.split(delimiter)]
-        tags_entities = []
-        for tag_entity in tag_sequence_split:
-            tag_entity_split = tag_entity.split(':')
-            if len(tag_entity_split) != 2:
-                continue
-            tag = tag_entity_split[0].strip()
-            entity = tag_entity_split[1].strip()
-            tags_entities.append((tag, entity))
-        return tags_entities
+        # tags_entities = []
+        # for tag_entity in tag_sequence_split:
+        #     tag_entity_split = tag_entity.split(':')
+        #     if len(tag_entity_split) != 2:
+        #         continue
+        #     tag = tag_entity_split[0].strip()
+        #     entity = tag_entity_split[1].strip()
+        #     tags_entities.append((tag, entity)
+        return tag_sequence_split
+        # return tags_entities
 
     # Post-processing:
     def post_processing_function(

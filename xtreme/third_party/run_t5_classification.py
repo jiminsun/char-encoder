@@ -183,102 +183,6 @@ if is_torch_tpu_available():
     import torch_xla.debug.metrics as met
 
 
-class SentClassificationSeq2SeqTrainer(Seq2SeqTrainer):
-    # FIXME
-    def __init__(self, *args, task='xnli', eval_examples=None, post_process_function=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.task = task
-        self.eval_examples = eval_examples
-        self.post_process_function = post_process_function
-        self._max_length = None
-        self._num_beams = None
-
-    # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
-    def evaluate(
-        self,
-        eval_dataset: Optional[Dataset] = None,
-        eval_examples=None,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
-        max_length: Optional[int] = None,
-        num_beams: Optional[int] = None,
-    ) -> Dict[str, float]:
-        self._max_length = max_length if max_length is not None else self.args.generation_max_length
-        self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
-
-        eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
-        eval_dataloader = self.get_eval_dataloader(eval_dataset)
-        eval_examples = self.eval_examples if eval_examples is None else eval_examples
-
-        # Temporarily disable metric computation, we will do it in the loop here.
-        compute_metrics = self.compute_metrics
-        self.compute_metrics = None
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
-        try:
-            output = eval_loop(
-                eval_dataloader,
-                description="Evaluation",
-                # No point gathering the predictions if there are no metrics, otherwise we defer to
-                # self.args.prediction_loss_only
-                prediction_loss_only=True if compute_metrics is None else None,
-                ignore_keys=ignore_keys,
-            )
-        finally:
-            self.compute_metrics = compute_metrics
-
-        if self.post_process_function is not None and self.compute_metrics is not None:
-            eval_preds = self.post_process_function(eval_examples, output)
-            metrics = self.compute_metrics(eval_preds)
-
-            # Prefix all keys with metric_key_prefix + '_'
-            for key in list(metrics.keys()):
-                if not key.startswith(f"{metric_key_prefix}_"):
-                    metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
-
-            self.log(metrics)
-        else:
-            metrics = {}
-
-        if self.args.tpu_metrics_debug or self.args.debug:
-            # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-            xm.master_print(met.metrics_report())
-
-        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
-        return metrics
-
-    def predict(self, predict_dataset, predict_examples, ignore_keys=None, metric_key_prefix: str = "test"):
-        predict_dataloader = self.get_test_dataloader(predict_dataset)
-
-        # Temporarily disable metric computation, we will do it in the loop here.
-        compute_metrics = self.compute_metrics
-        self.compute_metrics = None
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
-        try:
-            output = eval_loop(
-                predict_dataloader,
-                description="Prediction",
-                # No point gathering the predictions if there are no metrics, otherwise we defer to
-                # self.args.prediction_loss_only
-                prediction_loss_only=True if compute_metrics is None else None,
-                ignore_keys=ignore_keys,
-            )
-        finally:
-            self.compute_metrics = compute_metrics
-
-        if self.post_process_function is None or self.compute_metrics is None:
-            return output
-
-        predictions = self.post_process_function(predict_examples, output)
-        metrics = self.compute_metrics(predictions)
-
-        # Prefix all keys with metric_key_prefix + '_'
-        for key in list(metrics.keys()):
-            if not key.startswith(f"{metric_key_prefix}_"):
-                metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
-
-        return PredictionOutput(predictions=predictions.predictions, label_ids=predictions.label_ids, metrics=metrics)
-
-
 def main():
     parser = HfArgumentParser((UserArguments, ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
@@ -475,8 +379,8 @@ def main():
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            # labels = tokenizer(targets, max_length=max_answer_length, padding=padding, truncation=True)
-            labels = tokenizer(targets, padding=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding=True, truncation=True)
+            # labels = tokenizer(targets, padding=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -595,11 +499,11 @@ def main():
     )
 
     # FIXME: fix evaluation according to the downstream task
-    accuracy = datasets.load_metric("accuracy")
+    # accuracy = datasets.load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
-        return accuracy.compute(predictions=p.predictions, references=p.label_ids)
-
+        score = [str(pred) == str(gold) for (pred, gold) in zip(p.predictions, p.label_ids)]
+        return {'accuracy': sum(score) / len(score)}
     # Post-processing:
     def post_processing_function(
             examples: datasets.Dataset,
@@ -610,6 +514,7 @@ def main():
         if isinstance(preds, tuple):
             preds = preds[0]
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = [p.strip() for p in decoded_preds]
 
         references = examples['label']
         return EvalPrediction(predictions=decoded_preds, label_ids=references)
@@ -687,7 +592,10 @@ def main():
         }
         with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.txt'), 'w') as f:
             for pred in results.predictions:
-                print(map_idx_to_label[pred], file=f)
+                print(map_idx_to_label.get(pred.strip(), pred), file=f)
+
+        with open(os.path.join(training_args.output_dir, 'scores.txt'), 'a') as f:
+            print(f"{args.eval_lang}", metrics, file=f)
 
 
 def _mp_fn(index):

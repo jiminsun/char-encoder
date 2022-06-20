@@ -224,7 +224,6 @@ def main(args):
                 torch.cuda.synchronize()
                 curr_time = starter.elapsed_time(ender)
                 # Returns the maximum GPU memory occupied by tensors in bytes for a given device
-                curr_max_memory = torch.cuda.max_memory_allocated(0)
                 timings[rep, i] = curr_time
 
     print(f"*** Average inference time for {model_name} at {args.task}: {timings.mean()} ms")

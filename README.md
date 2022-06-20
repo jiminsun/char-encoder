@@ -1,12 +1,9 @@
 # char-encoder
 
-## Download data
-Follow the steps described in `./xtreme` and run `./xtreme/scripts/download_data.sh`.
-
 ## Environment setup
-* Follow the steps in `./xtreme`
-* Install `wandb`
-* For fp16 (mBERT, CANINE-S, CANINE-C), install [apex](https://github.com/NVIDIA/apex)
+```
+conda env create -f requirements.yml -n $ENV_NAME
+```
 
 ## Training
 ### Single language training

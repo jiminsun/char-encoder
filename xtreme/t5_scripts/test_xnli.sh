@@ -2,6 +2,7 @@ REPO=$PWD
 MODEL=$1
 LANG=${2:-en}  # specific lang or all
 GPU=${3:-0}
+NUM_BEAM=${4:-1}
 
 DATA_DIR=$REPO/download/
 TASK=xnli
@@ -33,7 +34,7 @@ if [ $LANG == "all" ]; then
       --per_device_eval_batch_size ${BATCH_SIZE} \
       --eval_accumulation_steps 4 \
       --predict_with_generate --generation_max_length ${MAX_ANSWER_LEN} \
-      --generation_num_beams 5
+      --generation_num_beams $NUM_BEAM
   done
 else
   echo "=== evaluating on $LANG"
@@ -50,6 +51,6 @@ else
       --per_device_eval_batch_size ${BATCH_SIZE} \
       --eval_accumulation_steps 4 \
       --predict_with_generate --generation_max_length ${MAX_ANSWER_LEN} \
-      --generation_num_beams 5
+      --generation_num_beams $NUM_BEAM
 fi
 

@@ -12,10 +12,12 @@ if [ "${TRAIN_LANG}" == "all" ]; then
   CONFIG=multilingual/
   MAX_STEPS=100000
   SAVE=500
+  EVAL_LANG=all
 else
   CONFIG=in_language/${TRAIN_LANG}_
   MAX_STEPS=5000
   SAVE=200
+  EVAL_LANG=${TRAIN_LANG}
 fi
 
 if [ $MODEL == "google/mt5-small" ]; then
@@ -77,3 +79,5 @@ CUDA_VISIBLE_DEVICES=$GPU python third_party/run_t5_classification.py \
   --eval_steps $MAX_STEPS \
   --max_steps $MAX_STEPS --logging_steps 20 \
   --predict_with_generate 
+
+bash $REPO/t5_scripts/test_xnli.sh ${MODEL_DIR}/checkpoint-5000 ${EVAL_LANG} ${GPU}

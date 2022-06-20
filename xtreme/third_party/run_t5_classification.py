@@ -12,12 +12,6 @@ from torch.utils.data import Dataset
 
 import transformers
 from transformers import (
-    MT5Config,
-    MT5ForConditionalGeneration,
-    MT5Tokenizer,
-    T5Config,
-    T5ForConditionalGeneration,
-    ByT5Tokenizer,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     HfArgumentParser,
@@ -38,9 +32,9 @@ from transformers.trainer_utils import (
 )
 
 import datasets
-from datasets import load_dataset, load_metric, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets
 
-from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments
+from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments, CustomSeq2SeqTrainer
 
 languages = {
     'xnli': ['ar', 'bg', 'de', 'el', 'en',
@@ -76,7 +70,7 @@ def is_tensorboard_available():
     return _has_tensorboard
 
 
-class ClassificationSeq2SeqTrainer(Seq2SeqTrainer):
+class ClassificationSeq2SeqTrainer(CustomSeq2SeqTrainer):
     def __init__(self, *args, task='xnli', eval_examples=None, post_process_function=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.task = task
@@ -590,11 +584,12 @@ def main():
             '1': 'neutral',
             '2': 'contradiction'
         }
-        with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.txt'), 'w') as f:
+        with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.beam{num_beams}.txt'), 'w') as f:
             for pred in results.predictions:
                 print(map_idx_to_label.get(pred.strip(), pred), file=f)
 
-        with open(os.path.join(training_args.output_dir, 'scores.txt'), 'a') as f:
+        output_file = f'scores.beam{num_beams}.txt'
+        with open(os.path.join(training_args.output_dir, output_file), 'a') as f:
             print(f"{args.eval_lang}", metrics, file=f)
 
 

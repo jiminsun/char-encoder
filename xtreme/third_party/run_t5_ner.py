@@ -41,7 +41,7 @@ from transformers.trainer_utils import (
 import datasets
 from datasets import load_dataset, load_metric, concatenate_datasets
 
-from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments
+from processors.t5_utils import ModelArguments, DataTrainingArguments, UserArguments, CustomSeq2SeqTrainer
 
 languages = {
     'wikiann': ["en", "ar", "bn", "de", "el",
@@ -78,14 +78,14 @@ def is_tensorboard_available():
     return _has_tensorboard
 
 
-class NERSeq2SeqTrainer(Seq2SeqTrainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+class NERSeq2SeqTrainer(CustomSeq2SeqTrainer):
+    def __init__(self, *args, eval_examples=None, post_process_function=None,
+                 num_beams=None, generation_max_length=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
-        self._max_length = None
-        self._num_beams = None
-
+        self._max_length = generation_max_length
+        self._num_beams = num_beams
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(
@@ -97,8 +97,8 @@ class NERSeq2SeqTrainer(Seq2SeqTrainer):
         max_length: Optional[int] = None,
         num_beams: Optional[int] = None,
     ) -> Dict[str, float]:
-        self._max_length = max_length if max_length is not None else self.args.generation_max_length
-        self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
+        self._max_length = max_length if max_length is not None else self._max_length
+        self._num_beams = num_beams if num_beams is not None else self._num_beams
 
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
@@ -140,7 +140,11 @@ class NERSeq2SeqTrainer(Seq2SeqTrainer):
         self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
         return metrics
 
-    def predict(self, predict_dataset, predict_examples, ignore_keys=None, metric_key_prefix: str = "test"):
+    def predict(self, predict_dataset, predict_examples,
+                ignore_keys=None, metric_key_prefix: str = "test"):
+        self._max_length = 512
+        self._num_beams = 30
+
         predict_dataloader = self.get_test_dataloader(predict_dataset)
 
         # Temporarily disable metric computation, we will do it in the loop here.
@@ -369,7 +373,7 @@ def main():
             else:
                 return "None </s>"
 
-        if examples['langs'][0] in ['th', 'zh', 'ja']:
+        if examples['langs'][0] in ['th', 'zh', 'ja'] and 'byt5' in model_args.model_name_or_path:
             sep = ''
         else:
             sep = ' '
@@ -586,6 +590,8 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         post_process_function=post_processing_function,
+        num_beams=data_args.num_beams,
+        generation_max_length=data_args.max_answer_length,
     )
 
     # Training
@@ -629,7 +635,7 @@ def main():
     # Prediction
     if training_args.do_predict:
         logger.info("*** Predict ***")
-        results = trainer.predict(predict_dataset, predict_examples)
+        results = trainer.predict(predict_dataset=predict_dataset, predict_examples=predict_examples)
         metrics = results.metrics
 
         max_predict_samples = (
@@ -643,8 +649,12 @@ def main():
         with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.txt'), 'w') as f:
             for pred in results.predictions:
                 print(pred, file=f)
+        if data_args.max_predict_samples is not None:
+            output_file = f'scores.{max_predict_samples}.txt'
+        else:
+            output_file = f'scores.beam{num_beams}.txt'
 
-        with open(os.path.join(training_args.output_dir, 'scores.txt'), 'a') as f:
+        with open(os.path.join(training_args.output_dir, output_file), 'a') as f:
             print(f"{args.eval_lang}", metrics, file=f)
 
 

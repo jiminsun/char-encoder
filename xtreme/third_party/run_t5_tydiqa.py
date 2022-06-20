@@ -13,13 +13,6 @@ from torch.utils.data import Dataset
 
 import transformers
 from transformers import (
-    MT5Config,
-    MT5ForConditionalGeneration,
-    MT5Tokenizer,
-    T5Config,
-    T5ForConditionalGeneration,
-    ByT5Tokenizer,
-    Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     HfArgumentParser,
     AutoConfig,
@@ -27,7 +20,6 @@ from transformers import (
     AutoTokenizer,
     DataCollatorForSeq2Seq,
     set_seed,
-    PreTrainedTokenizerFast
 )
 from transformers.trainer_utils import (
     EvalLoopOutput,
@@ -42,7 +34,7 @@ from transformers.trainer_utils import (
 import datasets
 from datasets import load_dataset, load_metric
 
-from processors.t5_utils import UserArguments, ModelArguments, DataTrainingArguments
+from processors.t5_utils import UserArguments, ModelArguments, DataTrainingArguments, CustomSeq2SeqTrainer
 
 
 if is_apex_available():
@@ -84,13 +76,14 @@ if is_torch_tpu_available():
     import torch_xla.debug.metrics as met
 
 
-class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+class QuestionAnsweringSeq2SeqTrainer(CustomSeq2SeqTrainer):
+    def __init__(self, *args, eval_examples=None, post_process_function=None,
+                 num_beams=None, generation_max_length=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
-        self._max_length = None
-        self._num_beams = None
+        self._max_length = generation_max_length
+        self._num_beams = num_beams
 
     # def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
     def evaluate(
@@ -102,8 +95,8 @@ class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
         max_length: Optional[int] = None,
         num_beams: Optional[int] = None,
     ) -> Dict[str, float]:
-        self._max_length = max_length if max_length is not None else self.args.generation_max_length
-        self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
+        self._max_length = max_length if max_length is not None else self._max_length
+        self._num_beams = num_beams if num_beams is not None else self._num_beams
 
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
@@ -152,6 +145,8 @@ class QuestionAnsweringSeq2SeqTrainer(Seq2SeqTrainer):
             ignore_keys=None,
             metric_key_prefix: str = "test",
     ):
+        self._max_length = self.args.generation_max_length
+        self._num_beams = self.args.generation_num_beams
         predict_dataloader = self.get_test_dataloader(predict_dataset)
 
         # Temporarily disable metric computation, we will do it in the loop here.
@@ -376,7 +371,7 @@ def main():
         answers = examples[answer_column]
 
         def generate_input(_question, _context):
-            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip()])
+            return " ".join(["question: ", _question.lstrip(), "context: ", _context.lstrip()])
 
         inputs = [generate_input(question, context) for question, context in zip(questions, contexts)]
         targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in answers]
@@ -385,10 +380,10 @@ def main():
     def preprocess_function(examples):
         inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
 
-        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding='longest', truncation=True)
+        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding=True, truncation=True)
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding='longest', truncation=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding=True, truncation=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
@@ -407,14 +402,14 @@ def main():
         model_inputs = tokenizer(
             inputs,
             max_length=max_seq_length,
-            padding="longest",
+            padding=True,
             truncation=True,
             # return_overflowing_tokens=True,
             # return_offsets_mapping=True,
         )
         # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(targets, max_length=max_answer_length, padding='longest', truncation=True)
+            labels = tokenizer(targets, max_length=max_answer_length, padding=True, truncation=True)
 
         # Since one example might give us several features if it has a long context, we need a map from a feature to
         # its corresponding example. This key gives us just that.
@@ -557,6 +552,7 @@ def main():
         return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
     # Initialize our Trainer
+
     trainer = QuestionAnsweringSeq2SeqTrainer(
         model=model,
         args=training_args,
@@ -567,6 +563,8 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         post_process_function=post_processing_function,
+        num_beams=data_args.num_beams,
+        generation_max_length=data_args.max_answer_length,
     )
 
     # Training
@@ -629,9 +627,19 @@ def main():
                         {'text': pred['prediction_text']}
                 }
             )
-        with open(os.path.join(training_args.output_dir, f'pred_{args.eval_lang}.json'), 'w') as f:
+
+        if data_args.max_predict_samples is not None:
+            output_file = f'scores.{data_args.max_predict_samples}.txt'
+            output_json = f'pred_{args.eval_lang}.{data_args.max_predict_samples}.json'
+        else:
+            output_file = f'scores.beam{num_beams}.txt'
+            output_json = f'pred_{args.eval_lang}.json'
+
+        with open(os.path.join(training_args.output_dir, output_json), 'w') as f:
             json.dump(prediction_dicts, f)
 
+        with open(os.path.join(training_args.output_dir, output_file), 'a') as f:
+            print(f"{args.eval_lang}", len(predict_examples), metrics, file=f)
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)

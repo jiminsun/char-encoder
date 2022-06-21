@@ -53,8 +53,8 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
         logits = generated_tokens
 
-        if labels.shape[-1] < gen_kwargs["max_length"]:
-            labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
+        # if labels.shape[-1] < gen_kwargs["max_length"]:
+        #     labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
 
         return (torch.Tensor([0.0]), logits, labels)
 

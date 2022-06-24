@@ -192,6 +192,7 @@ def main(args):
     with torch.no_grad():
 
         for i, d in enumerate(model_inputs[:args.sample]):
+            torch.cuda.reset_max_memory_allocated(0)
             if "t5" in model_name:
                 num_beams = 1 if args.task == 'xnli' else args.beam
                 _ = model.generate(input_ids=d['input_ids'],
